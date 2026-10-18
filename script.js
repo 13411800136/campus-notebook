@@ -1011,6 +1011,10 @@ function buildTodayRow(ev, label) {
 // 只存在内存里 —— 刷新页面就清空，不写 localStorage。
 let chatMessages = [];
 
+// 正在等模型回话。为 true 时不许再发 —— 聊天讲先后顺序，
+// 两条同时飞出去，回来的顺序可能是反的，对话就串了。
+let chatBusy = false;
+
 function pad2(n) { return String(n).padStart(2, '0'); }
 
 /**
@@ -1175,38 +1179,81 @@ function normalizeAiBase(base) {
 }
 
 /**
- * 调一次「OpenAI 兼容」格式的接口，让它直接返回 JSON。
+ * 跟模型聊一轮（OpenAI 兼容格式）。
+ * 输入：这一句（文字或图片）+ 之前聊过的内容
+ * 输出：{ reply: 给用户看的话, activity: null 或一条活动 }
+ *
  * ⚠️ 浏览器直接调第三方 API 会遇到 CORS —— 有的服务允许、有的不允许；
  * 用 file:// 打开更严格。所以这里任何失败都往上抛，由调用方退回规则识别。
  */
-async function aiExtract(text, imageDataUrl) {
+async function aiChat(text, imageDataUrl, history) {
   const c = loadAiConfig();
 
-  const instruction = '可选类别：' + tags.join('、') + '\n今天是 ' + todayStr() + '\n\n';
+  const today = todayStr();
+  const weekday = '日一二三四五六'[new Date(today + 'T00:00:00').getDay()];
 
-  // 有图片就以「多模态」格式发（要求模型支持看图，比如 gpt-4o / qwen-vl）
-  const userContent = imageDataUrl
-    ? [
-        { type: 'text', text: instruction + (text ? '要提取的文字：\n' + text : '请从这张图片里提取活动信息。') },
+  // 把用户的待办摘要带进上下文，它才答得上「我今天有什么」「这周还有几件事」。
+  // 只发名称/日期/时间/类别，**不发备注** —— 备注里可能是群消息原文，没必要送出去。
+  const upcoming = events
+    .filter(e => statusOf(e) !== 'done' && daysFromToday(e.date) >= 0)
+    .sort((a, b) => a.date.localeCompare(b.date) || String(a.startTime || '').localeCompare(String(b.startTime || '')))
+    .slice(0, 20)
+    .map(e => `${e.date} ${e.startTime || '全天'} ${e.title} #${e.tag}`)
+    .join('\n');
+
+  const system = [
+    '你是「活动小本本」里的助手。用这个网页的是个大学生，正在把散在各处的校园活动记下来。',
+    '今天是 ' + today + '（星期' + weekday + '）。可选的类别只有：' + tags.join('、') + '。',
+    '',
+    '用户现在记着的待办（最多列 20 条）：',
+    upcoming || '（一条都没有）',
+    '',
+    '说话方式：',
+    '- 像同学之间聊天，简短、口语，一次不超过 60 字。不要客套，不要「作为AI」这类话。',
+    '- 用户可能只是在闲聊、在问问题，也可能在说一个活动。正常回应就行。',
+    '- 只有当你确实从对话里读到了一个活动（至少有名称或日期）时，才把它放进 activity。',
+    '- 用户改了主意（「不是周三」「地点不用记」），就按最新的说法改 activity。',
+    '- 日期统一写成 YYYY-MM-DD。拿不准的字段一律给空字符串，绝不编造。没说年份按今年算；说了「明年」就按明年。',
+    '- 用户没在说活动、或者在问你问题的时候，activity 给 null。',
+    '- 用户问「我今天有什么」「这周还有几件事」这类问题时，照上面那份待办清单回答，清单里没有就说没有，绝不编。',
+    '',
+    '只输出一个 JSON 对象，不要 Markdown 代码块，不要多余的解释。格式：',
+    '{"reply":"给用户看的一句话","activity":null}',
+    '或者',
+    '{"reply":"...","activity":{"title":"...","date":"YYYY-MM-DD","startTime":"HH:MM","endTime":"HH:MM","tag":"类别名"}}'
+  ].join('\n');
+
+  const messages = [{ role: 'system', content: system }];
+
+  // 之前聊过的（最多 10 条）。旧图片不重发，太费额度；
+  // 上一轮识别出的活动用一句话带进上下文，模型才知道「改成周四」是改哪一条。
+  (history || []).slice(-10).forEach(m => {
+    if (!m.text) return;
+    let content = m.text;
+    if (m.parsed) {
+      content += '\n（上一轮我给出的活动：' + describeParsed(m.parsed).replace(/\n/g, '；') + '）';
+    }
+    messages.push({ role: m.role === 'user' ? 'user' : 'assistant', content: content });
+  });
+
+  // 这一轮
+  if (imageDataUrl) {
+    messages.push({
+      role: 'user',
+      content: [
+        { type: 'text', text: text ? text : '这张图里是什么活动？' },
         { type: 'image_url', image_url: { url: imageDataUrl } }
       ]
-    : instruction + '要提取的文字：\n' + text;
+    });
+  } else {
+    messages.push({ role: 'user', content: text });
+  }
 
   const body = {
     model: c.model,
-    temperature: 0,
+    temperature: 0.3,              // 聊天要一点灵活性；识别靠提示词约束就够
     max_tokens: AI_MAX_TOKENS,     // 见上面 AI_MAX_TOKENS 的说明，别删
-    messages: [
-      {
-        role: 'system',
-        content: '你是一个活动信息提取助手。只输出一个 JSON 对象，不要任何解释、不要 Markdown 代码块。'
-               + '字段：understanding(用一句话说明你从这段内容里理解到了什么活动，30 字以内，像跟人说话), '
-               + 'title(活动名称，字符串), date(日期，YYYY-MM-DD，不确定就空字符串), '
-               + 'startTime(开始时间 HH:MM，不确定就空), endTime(结束时间 HH:MM，不确定就空), '
-               + 'tag(类别，必须从给定列表里选)。信息不明确就留空，绝不编造。'
-      },
-      { role: 'user', content: userContent }
-    ]
+    messages: messages
   };
 
   const url = normalizeAiBase(c.base);
@@ -1235,21 +1282,53 @@ async function aiExtract(text, imageDataUrl) {
     throw new Error('返回内容为空');
   }
 
-  const m = String(content).match(/\{[\s\S]*\}/);
-  if (!m) throw new Error('没有返回 JSON');
+  return parseAiReply(content, text);
+}
 
-  let got;
-  try { got = JSON.parse(m[0]); } catch (err) { throw new Error('JSON 解析失败'); }
+/**
+ * 把模型返回的东西解析成 { reply, activity }。
+ * 模型不一定完全听话：可能包一层 ```json、也可能干脆说人话。
+ * 所以解析不出来时，把那整段话当成 reply —— 至少别让用户看到一句「解析失败」。
+ */
+function parseAiReply(content, text) {
+  let raw = String(content).trim();
+  raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
 
-  // 逐项校验格式。模型给错的项，退回规则识别算出来的值。
-  const fallback = parseActivityText(text);
+  let got = null;
+  const m = raw.match(/\{[\s\S]*\}/);
+  if (m) {
+    try { got = JSON.parse(m[0]); } catch (err) { got = null; }
+  }
+
+  if (!got || typeof got !== 'object' || Array.isArray(got)) {
+    return { reply: raw.slice(0, 300), activity: null };
+  }
+
   return {
-    title:     typeof got.title === 'string' && got.title.trim() ? got.title.trim().slice(0, 50) : fallback.title,
-    date:      /^\d{4}-\d{2}-\d{2}$/.test(got.date || '') ? got.date : fallback.date,
-    startTime: /^\d{2}:\d{2}$/.test(got.startTime || '') ? got.startTime : fallback.startTime,
-    endTime:   /^\d{2}:\d{2}$/.test(got.endTime || '') ? got.endTime : fallback.endTime,
-    tag:       tags.indexOf(got.tag) !== -1 ? got.tag : fallback.tag,
-    understanding: typeof got.understanding === 'string' ? got.understanding.slice(0, 80) : ''
+    reply: typeof got.reply === 'string' ? got.reply.trim().slice(0, 300) : '',
+    activity: normalizeActivity(got.activity, text)
+  };
+}
+
+/**
+ * 把模型给的 activity 逐项校验。
+ * 给错的字段退回规则识别算出来的值；名称和日期都空的，就当它没认出活动。
+ */
+function normalizeActivity(a, text) {
+  if (!a || typeof a !== 'object' || Array.isArray(a)) return null;
+
+  const fallback = parseActivityText(text || '');
+  const title = typeof a.title === 'string' ? a.title.trim().slice(0, 50) : '';
+  const date = typeof a.date === 'string' ? a.date.trim() : '';
+
+  if (!title && !isValidDateStr(date)) return null;
+
+  return {
+    title:     title || fallback.title,
+    date:      isValidDateStr(date) ? date : fallback.date,
+    startTime: /^\d{2}:\d{2}$/.test(a.startTime || '') ? a.startTime : fallback.startTime,
+    endTime:   /^\d{2}:\d{2}$/.test(a.endTime || '') ? a.endTime : fallback.endTime,
+    tag:       tags.indexOf(a.tag) !== -1 ? a.tag : guessTag(title + ' ' + (text || ''))
   };
 }
 
@@ -1262,7 +1341,7 @@ function initAiSettings() {
   function refreshState() {
     const c = loadAiConfig();
     if (c.base && c.model && c.key) {
-      state.textContent = '当前：AI 识别（' + c.model + '）';
+      state.textContent = '当前：AI 对话（' + c.model + '）';
       state.classList.add('on');
     } else {
       state.textContent = '当前：规则识别';
@@ -1305,7 +1384,7 @@ function initAiSettings() {
 
     refreshState();
     msg.classList.add('ok');
-    msg.textContent = '已保存。下次拖入文字会先试 AI，失败自动退回规则识别。';
+    msg.textContent = '已保存。现在可以跟它聊天了；连不上的时候会自动退回本机规则。';
   });
 
   document.getElementById('btn-ai-clear').addEventListener('click', () => {
@@ -1362,7 +1441,7 @@ function renderChat() {
   if (chatMessages.length === 0) {
     const tip = document.createElement('p');
     tip.className = 'chat-empty';
-    tip.textContent = '打一句话描述活动，或者把群消息、文档、截图拖进来。它会告诉你自己理解到了什么，你点「填入表单」再存。';
+    tip.textContent = '可以随便聊，也可以直接把活动丢进来：打字、拖群消息、拖文档、拖截图都行。聊到确定要记的时候，点「填入表单」再存。';
     log.appendChild(tip);
     return;
   }
@@ -1424,19 +1503,25 @@ function previewText(s) {
 }
 
 /**
- * 问一次：文字或图片 → 得到结构化结果 → 作为一条 AI 消息放进对话。
+ * 问一轮：文字或图片 → 模型的话 +（可能有的）一条活动 → 放进对话。
  * 没配 AI / 调用失败时自动退回规则识别，并在消息里写明原因。
  */
 async function askAI(text, imageDataUrl, label) {
-  // 太长的不往里送：既费额度，识别出来也只会是一团乱
+  if (chatBusy) return;   // 上一轮还没回来，别插队
+
+  // 太长的不往里送：既费额度，读出来也只会是一团乱
   if (text && text.length > 4000) {
     pushChat({
       role: 'ai',
-      text: `这段文字太长了（${text.length} 字），一次最多认 4000 字。请只贴和活动有关的那几句。`
+      text: `这段文字太长了（${text.length} 字），一次最多 4000 字。请只贴和活动有关的那几句。`
     });
     renderChat();
     return;
   }
+
+  // 先把聊天记录抄下来 —— 等会儿要当上下文发过去，
+  // 必须在把这一句塞进去之前抄，否则它会重复两次。
+  const history = chatMessages.filter(m => !m.pending);
 
   pushChat({
     role: 'user',
@@ -1451,54 +1536,98 @@ async function askAI(text, imageDataUrl, label) {
   pushChat(thinking);
   renderChat();
 
-  let parsed = null;
-  let source = '规则识别';
+  setChatBusy(true);
+  try {
+    // ---------- 配了 AI：真正聊一轮 ----------
+    if (aiReady()) {
+      let got = null;
+      let failReason = '';
 
-  if (aiReady()) {
-    try {
-      parsed = await aiExtract(text, imageDataUrl);
-      source = imageDataUrl ? 'AI 识图' : 'AI 识别';
-    } catch (err) {
+      try {
+        got = await aiChat(text, imageDataUrl, history);
+      } catch (err) {
+        failReason = err.message;
+      }
+
+      if (got) {
+        dropPending(thinking);
+        pushChat({
+          role: 'ai',
+          text: got.reply || (got.activity ? '我把这条整理好了，你看看对不对：' : '我在。'),
+          parsed: got.activity,
+          source: imageDataUrl ? 'AI 识图' : 'AI 识别',
+          sourceText: text || ''
+        });
+        renderChat();
+        return;
+      }
+
+      // 连不上：图片没法用规则兜底，只能报错
       if (imageDataUrl) {
         dropPending(thinking);
         pushChat({
           role: 'ai',
-          text: 'AI 没能看懂这张图：' + err.message +
+          text: 'AI 没能看懂这张图：' + failReason +
                 '\n如果这个模型不支持看图，请换一个支持视觉的模型，或者把图里的字打出来。'
         });
         renderChat();
         return;
       }
-      parsed = parseActivityText(text);
-      source = '规则识别（AI 调用失败：' + err.message + '）';
+
+      const parsed = parseActivityText(text);
+      dropPending(thinking);
+      pushChat({
+        role: 'ai',
+        text: '刚才没连上 AI（' + failReason + '），我先用本机规则看了看：',
+        parsed: parsed,
+        source: '规则识别（AI 调用失败）',
+        sourceText: text
+      });
+      renderChat();
+      return;
     }
-  } else if (imageDataUrl) {
+
+    // ---------- 没配 AI：只能走本机规则，聊不了天 ----------
+    if (imageDataUrl) {
+      dropPending(thinking);
+      pushChat({
+        role: 'ai',
+        text: '看图片需要 AI：请在下面「AI 识别设置」里填一个支持看图的模型（比如 gpt-4o、qwen-vl-max）。不填的话，请把图里的字打出来。'
+      });
+      renderChat();
+      return;
+    }
+
+    const parsed = parseActivityText(text);
     dropPending(thinking);
     pushChat({
       role: 'ai',
-      text: '看图片需要 AI：请在下面「AI 识别设置」里填一个支持看图的模型（比如 gpt-4o、qwen-vl-max）。不填的话，请把图里的字打出来。'
+      text: '我理解成这样，你看看对不对：\n（想让我真的能聊天，得在下面「AI 识别设置」里填一个 API Key——现在用的是本机规则，只会认活动。）',
+      parsed: parsed,
+      source: '规则识别（没配 AI，用的是本机规则）',
+      sourceText: text
     });
     renderChat();
-    return;
-  } else {
-    parsed = parseActivityText(text);
-    // 没配 AI 时也要说清为什么走了规则，别让人以为 AI 认不出来
-    source = '规则识别（没配 AI，用的是本机规则）';
+  } finally {
+    setChatBusy(false);
   }
+}
 
-  dropPending(thinking);
-  pushChat({
-    role: 'ai',
-    text: parsed.understanding || '我理解成这样，你看看对不对：',
-    parsed: parsed,
-    source: source,
-    sourceText: text
-  });
-  renderChat();
+/**
+ * 请求还没回来时，把发送按钮按住。
+ * 聊天是有先后顺序的 —— 两条同时发出去，回来的顺序可能是反的。
+ */
+function setChatBusy(on) {
+  chatBusy = on;
+  const btn = document.getElementById('chat-send');
+  if (!btn) return;
+  btn.disabled = on;
+  btn.textContent = on ? '…' : '发送';
 }
 
 /** 点「发送」 */
 function sendChat() {
+  if (chatBusy) return;
   const box = document.getElementById('chat-text');
   if (!box) return;
   const text = box.value.trim();
