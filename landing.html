@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>活动小本本 · 别让活动死在聊天记录里</title>
+<style>
+/* =========================================================
+   活动小本本 · 着陆页
+   ---------------------------------------------------------
+   设计说明（答辩可以讲）：
+   这是一张"故意打破规则"的页面，但破得有纪律 ——
+     · 颜色：只用了 4 个，而且故意让它们互相打架（酸黄 / 电蓝 / 荧光粉 / 墨黑）
+     · 字体：只用了 3 套（粗黑体 / 等宽 / 衬线），故意不配套
+     · 布局：底层还是 12 列栅格，只是每个元素故意错位、越界、旋转
+     · 留白：故意不对称 —— 左边挤、右边空，但阅读路径仍然是从左上到右下
+   真正的"反设计"不是随便乱放，是**在一套隐藏规则上精准违规**。
+   ========================================================= */
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --acid:  #D8FF00;   /* 酸黄 —— 主色 */
+  --blue:  #2B2BFF;   /* 电蓝 —— 撞它 */
+  --pink:  #FF3D8B;   /* 荧光粉 —— 再撞 */
+  --ink:   #0A0A0A;
+  --paper: #F0EDE3;
+
+  --display: "Arial Black", "Helvetica Neue", Impact, "Microsoft YaHei", sans-serif;
+  --mono:    Consolas, "Courier New", monospace;
+  --serif:   Georgia, "Songti SC", SimSun, serif;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1.55;
+  overflow-x: hidden;
+}
+
+a { color: inherit; }
+
+/* ---------- 顶部：故意不对称 ---------- */
+.top {
+  display: grid;
+  grid-template-columns: 88px 1fr auto;
+  align-items: start;
+  gap: 0;
+  border-bottom: 3px solid var(--ink);
+  padding: 14px 0 12px 0;
+}
+
+.mark {
+  width: 56px;
+  height: 56px;
+  margin-left: 18px;
+  background: var(--ink);
+  color: var(--acid);
+  font-family: var(--display);
+  font-size: 22px;
+  line-height: 56px;
+  text-align: center;
+  transform: rotate(-6deg);
+}
+
+.top-meta {
+  padding-left: 4px;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.top-meta strong { display: block; font-size: 13px; letter-spacing: 0.04em; }
+
+.top-link {
+  align-self: start;
+  margin-right: 20px;
+  padding: 6px 14px;
+  background: var(--pink);
+  color: var(--paper);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-decoration: none;
+  border: 2px solid var(--ink);
+  transform: rotate(2.5deg);
+}
+
+/* ---------- 主视觉：巨大标题越界 + 一侧留白 ---------- */
+.hero {
+  display: grid;
+  grid-template-columns: 1.55fr 0.9fr;
+  grid-template-rows: auto auto;
+  border-bottom: 3px solid var(--ink);
+  padding: 34px 0 40px 0;
+}
+
+.hero-type {
+  grid-column: 1;
+  padding-left: 18px;
+  /* 让字顶到更左边，故意越出内容区 */
+  margin-left: -8px;
+}
+
+.hero-type h1 {
+  font-family: var(--display);
+  font-size: clamp(64px, 13vw, 168px);
+  line-height: 0.82;
+  letter-spacing: -0.045em;
+  text-transform: uppercase;
+}
+
+.hero-type h1 span {
+  display: block;
+}
+
+/* 第二行故意往右缩进，制造断层 */
+.hero-type h1 span:nth-child(2) {
+  margin-left: 0.6em;
+  color: var(--blue);
+}
+
+.hero-type h1 em {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 0.42em;
+  letter-spacing: 0;
+  color: var(--pink);
+  -webkit-text-stroke: 0;
+}
+
+.hero-side {
+  grid-column: 2;
+  align-self: end;
+  padding: 0 20px 4px 10px;
+}
+
+.hero-side p {
+  font-size: 13px;
+  line-height: 1.75;
+  max-width: 30ch;
+}
+
+.hero-side .stamp {
+  display: inline-block;
+  margin-bottom: 14px;
+  padding: 3px 9px;
+  background: var(--acid);
+  border: 2px solid var(--ink);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  transform: rotate(-3deg);
+}
+
+/* 竖向文字条：骑在分界线上 */
+.vertical {
+  grid-column: 1 / -1;
+  justify-self: end;
+  margin-right: 26px;
+  margin-top: -18px;
+  writing-mode: vertical-rl;
+  font-size: 10px;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: var(--blue);
+}
+
+/* ---------- 滚动色带 ---------- */
+.tape {
+  overflow: hidden;
+  border-bottom: 3px solid var(--ink);
+  background: var(--blue);
+  color: var(--acid);
+  padding: 9px 0;
+}
+
+.tape-inner {
+  display: flex;
+  gap: 0;
+  width: max-content;
+  animation: slide 22s linear infinite;
+  font-family: var(--display);
+  font-size: 15px;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+}
+
+.tape-inner span { padding: 0 26px; }
+
+@keyframes slide {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+/* ---------- 三个功能块：错位的栅格 ---------- */
+.blocks {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  border-bottom: 3px solid var(--ink);
+}
+
+.block {
+  padding: 26px 18px 30px;
+  border-right: 3px solid var(--ink);
+}
+
+.block:nth-child(1) { grid-column: 1 / span 5; }
+.block:nth-child(2) { grid-column: 6 / span 4; background: var(--acid); }
+.block:nth-child(3) { grid-column: 10 / span 3; border-right: none; background: var(--ink); color: var(--paper); }
+
+/* 第四块单独占一整行，故意打破上面的三栏节奏 */
+.block:nth-child(4) {
+  grid-column: 1 / span 12;
+  border-right: none;
+  border-top: 3px solid var(--ink);
+  background: var(--blue);
+  color: #fff;
+}
+
+.block:nth-child(4) .num { color: var(--acid); }
+.block:nth-child(4) p { max-width: 54ch; }
+
+/* 第二个块整体往上提，故意破坏行基线 */
+.block:nth-child(2) { transform: translateY(-14px); }
+
+.block .num {
+  display: block;
+  font-family: var(--display);
+  font-size: 40px;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  margin-bottom: 10px;
+}
+
+.block:nth-child(3) .num { color: var(--pink); }
+
+.block h2 {
+  font-family: var(--display);
+  font-size: 19px;
+  letter-spacing: -0.01em;
+  margin-bottom: 8px;
+}
+
+.block p { font-size: 12px; line-height: 1.7; max-width: 26ch; }
+
+/* ---------- 大留白 + 落单的 CTA ---------- */
+.outro {
+  display: grid;
+  /* minmax(0, …) 很关键：不加的话，栅格列会被内容撑开，
+     超出的部分又被 body 的 overflow-x: hidden 裁掉，字就"断"了 */
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  align-items: start;
+  gap: 0;
+  padding: 58px 18px 64px 0;
+  border-bottom: 3px solid var(--ink);
+}
+
+.outro > * { min-width: 0; }
+
+.outro-note {
+  padding-left: 18px;
+  font-family: var(--serif);
+  /* 字号上限从 34 降到 30，给汉字留够换行空间 */
+  font-size: clamp(18px, 2.3vw, 30px);
+  font-style: italic;
+  line-height: 1.4;
+  /* 用 em 而不是 ch —— ch 是按数字"0"的宽度算的，对汉字不准 */
+  max-width: 15em;
+  overflow-wrap: break-word;
+}
+
+.outro-note mark {
+  background: var(--acid);
+  padding: 0 4px;
+}
+
+.cta-wrap {
+  padding-top: 80px;   /* 故意让按钮掉在很低的位置 */
+}
+
+.cta {
+  display: inline-block;
+  padding: 18px 30px;
+  background: var(--ink);
+  color: var(--acid);
+  font-family: var(--display);
+  font-size: 17px;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+  border: 3px solid var(--ink);
+  box-shadow: 9px 9px 0 var(--pink);
+  transform: rotate(-1.5deg);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.cta:hover {
+  transform: rotate(0deg) translate(3px, 3px);
+  box-shadow: 4px 4px 0 var(--pink);
+}
+
+.cta:active {
+  transform: translate(9px, 9px);
+  box-shadow: 0 0 0 var(--pink);
+}
+
+/* 右边那 1fr 故意空着 —— 不对称的负空间 */
+.outro-spacer { min-height: 1px; }
+
+/* ---------- 页脚 ---------- */
+.foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 16px 18px 22px;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.foot .pink { color: var(--pink); }
+
+/* ---------- 窄屏：把错位收起来，保证还能读 ---------- */
+@media (max-width: 860px) {
+  .hero { grid-template-columns: 1fr; }
+  .hero-side { grid-column: 1; padding: 18px 18px 0; }
+  .vertical { display: none; }
+  .blocks { grid-template-columns: 1fr; }
+  .block { grid-column: 1 !important; border-right: none; border-bottom: 3px solid var(--ink); transform: none !important; }
+  /* 堆叠后上一块的 border-bottom 已经画了线，第四块别再叠一条 */
+  .block:nth-child(4) { border-top: none; }
+  .block:last-child { border-bottom: none; }
+  .outro { grid-template-columns: 1fr; padding: 34px 0 46px; }
+  .cta-wrap { padding: 26px 18px 0; }
+  .outro-spacer { display: none; }
+  .top { grid-template-columns: 72px 1fr; }
+  .top-link { grid-column: 2; justify-self: start; margin: 10px 0 0 4px; }
+}
+
+/* 系统里开了「减少动态效果」就不跑色带 */
+@media (prefers-reduced-motion: reduce) {
+  .tape-inner { animation: none; }
+  html { scroll-behavior: auto; }
+  .cta { transition: none; }
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="mark">活</div>
+  <div class="top-meta">
+    <strong>活动小本本</strong>
+    Activity Ledger · 2026
+  </div>
+  <a class="top-link" href="index.html">进入应用 ↗</a>
+</header>
+
+<main>
+
+  <section class="hero">
+    <div class="hero-type">
+      <h1>
+        <span>校园活动</span>
+        <span>信息<em>整理器</em></span>
+      </h1>
+    </div>
+
+    <div class="hero-side">
+      <span class="stamp">纯前端 / 免注册 / 离线可用</span>
+      <p>
+        群消息一刷就沉底，海报扫完就忘，公众号更没法搜。<br>
+        把刷到的活动<b>十秒记一条</b>，左边日历看哪天有事，右边列表看具体是什么。
+      </p>
+    </div>
+
+    <div class="vertical">A personal ledger for campus activities</div>
+  </section>
+
+  <div class="tape" aria-hidden="true">
+    <div class="tape-inner">
+      <span>记下来</span><span>/</span><span>找得到</span><span>/</span><span>看得见</span><span>/</span>
+      <span>改得动</span><span>/</span><span>删得回</span><span>/</span><span>断网也能用</span><span>/</span>
+      <span>记下来</span><span>/</span><span>找得到</span><span>/</span><span>看得见</span><span>/</span>
+      <span>改得动</span><span>/</span><span>删得回</span><span>/</span><span>断网也能用</span><span>/</span>
+    </div>
+  </div>
+
+  <section class="blocks">
+    <article class="block">
+      <span class="num">01</span>
+      <h2>记下来</h2>
+      <p>名称、日期、类别、备注。备注栏可以直接把群消息原文整段粘进去，信息一个字都不丢。</p>
+    </article>
+
+    <article class="block">
+      <span class="num">02</span>
+      <h2>看得见</h2>
+      <p>左边是月历。有活动的日子挂圆点，数字就是还没做完的条数；全做完了，变成一个绿勾。</p>
+    </article>
+
+    <article class="block">
+      <span class="num">03</span>
+      <h2>改得动</h2>
+      <p>录错了不用删掉重录，点「编辑」就地改；删掉的五秒内还能撤销回来。</p>
+    </article>
+
+    <article class="block">
+      <span class="num">04</span>
+      <h2>说一句</h2>
+      <p>懒得手打就把通知丢进对话框——打一句话、拖一份文档、贴一张截图。它先说出自己理解到了什么活动，你点头，它才填进表单。</p>
+    </article>
+  </section>
+
+  <section class="outro">
+    <div class="outro-note">
+      它只在你说了算的时候动手。<br>
+      它只是把<mark>你要去的地方</mark>，按时间摆好。
+    </div>
+
+    <div class="cta-wrap">
+      <a class="cta" href="index.html">打开小本本 →</a>
+    </div>
+  </section>
+
+</main>
+
+<footer class="foot">
+  <span>纯 HTML / CSS / JS · 零依赖 · 默认完全离线（AI 识别才联网）</span>
+  <span>数据只存在你自己的浏览器里</span>
+  <span class="pink">不要用真实姓名 / 手机号 / 学号</span>
+</footer>
+
+</body>
+</html>

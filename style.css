@@ -1,0 +1,1772 @@
+/* =========================================================
+   活动小本本 · 样式
+   分三段：① 全局变量与基础  ② 顶栏与面板  ③ 列表、弹窗、提示条
+   ========================================================= */
+
+/* ---------- ① 全局变量与基础 ---------- */
+:root {
+  --bg:          #f5f6f8;   /* 页面底色 */
+  --card:        #ffffff;   /* 卡片底色 */
+  --text:        #1f2328;   /* 主要文字 */
+  --muted:       #6b7280;   /* 次要文字 */
+  --line:        #e4e6ea;   /* 分隔线 */
+  --accent:      #2f6feb;   /* 主色：蓝 */
+  --accent-soft: #eaf1fe;   /* 主色浅底 */
+  --danger:      #c62828;   /* 危险色：红 */
+  --warn:        #8a6100;   /* 警示色：黄褐 */
+  --warn-soft:   #fdf6e3;
+  --radius:      10px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB",
+               system-ui, -apple-system, sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+/* ---------- ② 顶栏与面板 ---------- */
+.topbar {
+  background: var(--card);
+  border-bottom: 1px solid var(--line);
+  padding: 18px 20px;
+  text-align: center;
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: 1px;
+}
+
+.stats {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* 左右分栏：左边日历，右边小本本。
+   比例用 minmax 做弹性——窗口变窄时两边一起收，但都不会挤到不能用。
+   想调左右比例，改下面那两个数字就行（当前约 4:6）。 */
+.wrap {
+  display: grid;
+  /* 三栏：左栏 / 12px 分隔条 / 右栏。
+     左栏默认 minmax(320px, 4fr)；拖动后会被 JS 换成具体像素值（--cal-w）。 */
+  grid-template-columns: var(--cal-w, minmax(320px, 4fr)) 12px minmax(400px, 6fr);
+  gap: 16px;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 16px 16px 96px;   /* 底部留白，避免被撤销条挡住 */
+  align-items: start;
+}
+
+.col { min-width: 0; }                 /* 防止内容把栅格撑破 */
+
+.col > .panel:last-child { margin-bottom: 0; }
+
+/* --- 左右栏之间那条能拖的分隔条 --- */
+.splitter {
+  position: relative;
+  align-self: stretch;
+  min-height: 360px;
+  cursor: col-resize;
+  touch-action: none;      /* 手机上拖动时别让页面跟着滚 */
+  background: transparent;
+  border-radius: 6px;
+}
+
+/* 中间那条细线，平时很淡，鼠标放上去/拖动时变粗变蓝 */
+.splitter::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  background: var(--line);
+  border-radius: 2px;
+  transition: width 0.15s ease, background-color 0.15s ease;
+}
+
+.splitter:hover::before,
+.splitter:focus-visible::before,
+.splitter.dragging::before {
+  width: calc(4px + var(--stretch, 0) * 4px);
+  background: var(--accent);
+}
+
+/* 拖动时中间那颗「水珠」：速度越快被拉得越长越扁，松手弹回圆点 */
+.splitter::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 10px;
+  height: 40px;
+  border-radius: 999px;
+  background: var(--accent);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scaleY(calc(1 + var(--stretch, 0)))
+             scaleX(calc(1 - var(--stretch, 0) * 0.3));
+  /* 松手后这 0.36s 就是它弹回去的那一下 */
+  transition: transform 0.36s var(--spring), opacity 0.2s ease;
+}
+
+.splitter.dragging::after {
+  opacity: 1;
+  /* 拖动中由 JS 每帧直接写值，别让 transition 拖后腿 */
+  transition: opacity 0.12s ease;
+}
+
+.splitter:focus-visible { outline: none; }
+
+/* 拖动过程中：光标变成左右箭头，并且整页禁止选中文字 */
+body.dragging-col {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.panel {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 18px;
+  margin-bottom: 16px;
+}
+
+.panel h2 {
+  margin: 0 0 14px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+/* --- 表单 --- */
+.field { margin-bottom: 14px; }
+
+.field label {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.req {
+  margin-left: 4px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--danger);
+}
+
+.hint {
+  margin-left: 4px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.field input[type="text"],
+.field input[type="date"],
+.field input[type="time"],
+.field textarea {
+  width: 100%;
+  padding: 9px 11px;
+  font-family: inherit;
+  font-size: 15px;
+  color: var(--text);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  outline: none;
+}
+
+.field input:focus,
+.field textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.field textarea { resize: vertical; }
+
+/* 输入出错时，输入框加红边 */
+.field input.invalid {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px #fdecea;
+}
+
+.error {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--danger);
+  min-height: 0;
+}
+
+/* --- 时间输入（开始 至 结束） --- */
+.time-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.time-row input[type="time"] { flex: 1; min-width: 0; }
+
+.time-sep {
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* 卡片上的时间，数字等宽，一眼能对齐比较 */
+.card-time {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+/* --- 到点提醒条（固定在顶部，压在所有内容上面，就是要你看到） --- */
+.reminder-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 16px;
+  color: #fff;
+  background: var(--danger);
+  font-size: 14px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
+  animation: reminder-in 0.3s ease;
+}
+
+.reminder-bar[hidden] { display: none; }
+
+.reminder-icon { font-size: 17px; }
+
+#reminder-text { flex: 1; word-break: break-word; }
+
+.reminder-close {
+  flex-shrink: 0;
+  padding: 4px 12px;
+  font-size: 13px;
+  color: #fff;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.reminder-close:hover { background: rgba(255, 255, 255, 0.18); }
+
+@keyframes reminder-in {
+  from { transform: translateY(-100%); }
+  to   { transform: translateY(0); }
+}
+
+@keyframes undo-in {
+  0%   { opacity: 0; transform: translate(-50%, 130%); }
+  100% { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* 标签切换：选中时轻轻弹一下，告诉手指"点到了" */
+.list-tab.active {
+  animation: tab-pop 0.3s var(--spring);
+}
+
+@keyframes tab-pop {
+  0%   { transform: scale(0.97); }
+  55%  { transform: scale(1.02); }
+  100% { transform: scale(1); }
+}
+
+/* --- 类别选择按钮 --- */
+.tag-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tag-btn {
+  padding: 6px 16px;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--text);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.tag-btn:hover { border-color: var(--accent); }
+
+.tag-btn.active {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+/* 「类别」标签和「管理」按钮并排（不能把按钮塞进 label 里，
+   否则点标签文字也会触发按钮） */
+.label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* 「管理」小按钮：长得像链接，不抢主按钮的注意力 */
+.link-btn {
+  padding: 0;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--accent);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.link-btn:hover { color: #2560d0; }
+
+/* --- 管理类别弹窗 --- */
+.tag-manage-list {
+  max-height: 220px;
+  overflow-y: auto;
+  margin-bottom: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.tag-manage-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.tag-manage-row:last-child { border-bottom: none; }
+
+.tag-manage-name { font-size: 14px; }
+
+.tag-manage-count {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.tag-manage-del {
+  padding: 3px 10px;
+  font-size: 13px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.tag-manage-del:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.tag-add-row {
+  display: flex;
+  gap: 8px;
+}
+
+.tag-add-row input {
+  flex: 1;
+  padding: 8px 11px;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  outline: none;
+}
+
+.tag-add-row input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* --- 表单按钮 --- */
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+button { font-family: inherit; }
+
+.btn-primary,
+.btn-ghost,
+.btn-danger {
+  padding: 9px 20px;
+  font-size: 15px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.btn-primary {
+  color: #fff;
+  background: var(--accent);
+  font-weight: 600;
+}
+
+.btn-primary:hover { background: #2560d0; }
+
+/* 保存成功后按钮短暂变绿 */
+.btn-primary.saved {
+  background: #1a7f37;
+  border-color: #1a7f37;
+}
+
+.btn-ghost {
+  color: var(--text);
+  background: #fff;
+  border-color: var(--line);
+}
+
+.btn-ghost:hover { border-color: var(--muted); }
+
+.btn-danger {
+  color: #fff;
+  background: var(--danger);
+  font-weight: 600;
+}
+
+.btn-danger:hover { background: #a81f1f; }
+
+/* --- 立体按钮：一层硬阴影托住，按下去真的会陷进去 ---
+   和着陆页用同一套视觉语言（硬边、实心投影、不用模糊）。
+   注意：阴影是「实心」不是「模糊」—— 模糊阴影看起来像浮起来，
+   实心偏移阴影才有「一块可以按的实体」的感觉。 */
+.btn-primary,
+.btn-ghost,
+.btn-danger {
+  box-shadow: 0 3px 0 rgba(10, 10, 10, 0.3);
+  transition: transform 0.08s ease, box-shadow 0.08s ease,
+              background-color 0.18s ease;
+}
+
+.btn-primary:hover,
+.btn-ghost:hover,
+.btn-danger:hover {
+  transform: translateY(1px);
+  box-shadow: 0 2px 0 rgba(10, 10, 10, 0.3);
+}
+
+.btn-primary:active,
+.btn-ghost:active,
+.btn-danger:active {
+  transform: translateY(3px);
+  box-shadow: 0 0 0 rgba(10, 10, 10, 0.3);   /* 按到底，阴影没了 = 贴平了 */
+}
+
+/* 键盘用户按 Tab 聚焦时也要看得见 */
+.btn-primary:focus-visible,
+.btn-ghost:focus-visible,
+.btn-danger:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 小控件也给一点点立体感，但比主按钮轻 */
+.cal-nav,
+.cal-today-btn,
+.status-btn,
+.card-edit,
+.card-del {
+  box-shadow: 0 2px 0 rgba(10, 10, 10, 0.16);
+  transition: transform 0.08s ease, box-shadow 0.08s ease,
+              color 0.18s ease, border-color 0.18s ease;
+}
+
+.cal-nav:active,
+.cal-today-btn:active,
+.status-btn:active,
+.card-edit:active,
+.card-del:active {
+  transform: translateY(2px);
+  box-shadow: 0 0 0 rgba(10, 10, 10, 0.16);
+}
+
+/* ---------- ③ 列表、弹窗、提示条 ---------- */
+/* --- 待办 / 历史 两个标签 --- */
+.list-tabs {
+  display: flex;
+  margin-bottom: 14px;
+  border: 2px solid var(--ink);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.list-tab {
+  flex: 1;
+  padding: 9px 10px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  background: #fff;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.18s ease, color 0.18s ease;
+}
+
+.list-tab + .list-tab { border-left: 2px solid var(--ink); }
+
+.list-tab:hover { background: #f3f3f3; }
+
+.list-tab.active {
+  color: #fff;
+  background: var(--blue);
+}
+
+.list-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.filter {
+  padding: 5px 14px;
+  font-size: 13px;
+  color: var(--text);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.filter:hover { border-color: var(--accent); }
+
+.filter.active {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+.filter-count {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* --- 「只看某天」的标签（在日历上点了某天之后才出现） --- */
+.day-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 5px 6px 5px 12px;
+  font-size: 13px;
+  color: #fff;
+  background: var(--accent);
+  border-radius: 999px;
+}
+
+.day-chip[hidden] { display: none; }
+
+.day-chip-x {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--accent);
+  background: #fff;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.day-chip-x:hover { background: var(--accent-soft); }
+
+/* --- 分组标题 --- */
+.group-title {
+  margin: 18px 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.5px;
+}
+
+.group-title:first-child { margin-top: 0; }
+
+/* --- 活动卡片 --- */
+.card {
+  position: relative;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+}
+
+/* 刚保存的那条，短暂高亮 */
+.card.flash {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  /* 弹簧式「弹一下」：先压小、冲过头、再回位 —— 不是匀速淡入 */
+  animation: card-pop 0.42s var(--spring);
+}
+
+@keyframes card-pop {
+  0%   { transform: scale(0.972); }
+  55%  { transform: scale(1.012); }
+  100% { transform: scale(1); }
+}
+
+/* 已过期的卡片：整体变灰 */
+.card.past {
+  border-left-color: var(--line);
+  opacity: 0.62;
+}
+
+.card-main { flex: 1; min-width: 0; }
+
+.card-title {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.card-day { font-weight: 600; }
+.card-day.soon { color: var(--danger); }
+
+.card-note {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.card-del {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  font-size: 13px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.card-del:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+/* --- AI 对话区 --- */
+.chat { margin-bottom: 16px; }
+
+.chat-log {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 84px;
+  max-height: 260px;
+  padding: 10px;
+  overflow-y: auto;
+  background: #fff;
+  border: 2px solid #111;
+  border-radius: 10px;
+  /* 拖文件悬停时靠这个外发光提示，不用额外加元素 */
+  transition: box-shadow 0.18s ease, background-color 0.18s ease;
+}
+
+/* 拖着东西悬在对话区上方 */
+.chat-log.over {
+  background: #fffbe0;
+  box-shadow: inset 0 0 0 3px var(--accent);
+}
+
+.chat-empty {
+  margin: auto;
+  padding: 8px 4px;
+  font-size: 12px;
+  line-height: 1.75;
+  color: var(--muted);
+  text-align: center;
+}
+
+.chat-msg { display: flex; }
+.chat-msg.from-user { justify-content: flex-end; }
+.chat-msg.from-ai { justify-content: flex-start; }
+
+.chat-bubble {
+  max-width: 88%;
+  padding: 8px 11px;
+  font-size: 13px;
+  line-height: 1.65;
+  border: 2px solid var(--ink, #111);
+  border-radius: 10px;
+  word-break: break-word;
+}
+
+/* 只有最新那条弹一下 —— 整个对话每次重画，全部弹会像在原地抽搐 */
+.chat-msg.chat-new .chat-bubble { animation: chat-pop 0.24s var(--spring) both; }
+
+@keyframes chat-pop {
+  from { opacity: 0; transform: translateY(6px) scale(0.97); }
+  to   { opacity: 1; transform: none; }
+}
+
+.from-user .chat-bubble { background: var(--acid, #d8ff00); border-bottom-right-radius: 2px; }
+.from-ai .chat-bubble { background: #fff; border-bottom-left-radius: 2px; }
+
+/* 「正在理解…」时呼吸，让人知道还在跑（放在 chat-new 后面，抢过它） */
+.chat-msg .chat-bubble.pending { animation: chat-breathe 1.1s ease-in-out infinite; }
+
+@keyframes chat-breathe {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.45; }
+}
+
+.chat-bubble .chat-text { margin: 0; white-space: pre-wrap; }
+
+.chat-img {
+  display: block;
+  max-width: 180px;
+  max-height: 140px;
+  margin-bottom: 6px;
+  border: 2px solid #111;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+/* 结构化结果：等宽 + 左边一道蓝条，一眼看出是「机器理解的」 */
+.chat-parsed {
+  margin-top: 6px;
+  padding: 7px 9px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  background: #f2f2f5;
+  border-left: 3px solid var(--blue, #2b2bff);
+  border-radius: 4px;
+}
+
+.chat-fill {
+  margin-top: 8px;
+  padding: 5px 12px;
+  font-size: 12px;
+}
+
+.chat-input {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.chat-attach {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--text);
+  background: #fff;
+  border: 2px solid var(--ink, #111);
+  border-radius: 8px;
+  box-shadow: 3px 3px 0 var(--ink, #111);
+  cursor: pointer;
+  transition: transform 0.14s ease, background-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.chat-attach:hover { background: var(--accent-soft); }
+.chat-attach:active { transform: translate(3px, 3px); box-shadow: 0 0 0 var(--ink, #111); }
+
+#chat-text {
+  flex: 1 1 auto;
+  min-height: 36px;
+  max-height: 96px;
+  padding: 7px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  background: #fff;
+  border: 2px solid var(--ink, #111);
+  border-radius: 8px;
+  resize: none;
+  overflow-y: auto;
+}
+
+#chat-text:focus {
+  outline: none;
+  border-color: var(--blue, #2b2bff);
+  box-shadow: 3px 3px 0 var(--blue, #2b2bff);
+  background: #fbffe0;
+}
+
+.chat-send {
+  flex: 0 0 auto;
+  height: 36px;
+  padding: 0 14px;
+  font-size: 13px;
+}
+
+/* --- AI 识别设置 --- */
+.ai-bar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+.ai-state { color: var(--muted); }
+
+.ai-state.on {
+  color: #1a7f37;
+  font-weight: 600;
+}
+
+.ai-panel {
+  margin-top: 10px;
+  padding: 12px;
+  background: #fbfbfd;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.ai-panel[hidden] { display: none; }
+
+.ai-note {
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+
+.ai-note b { color: var(--text); }
+
+/* 成功提示用绿色，别和红色错误提示混在一起 */
+.error.ok { color: #1a7f37; }
+
+/* --- 编辑模式 --- */
+.edit-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 9px 12px;
+  font-size: 13px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid #c3d8fb;
+  border-radius: 8px;
+  word-break: break-word;
+}
+
+.edit-banner[hidden] { display: none; }
+
+/* 正在编辑时整个录入面板换个边框，一眼看得出这不是普通的新增 */
+.panel.editing {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* --- 卡片右下角的「编辑 / 删除」两个小按钮 --- */
+.card-btns {
+  display: flex;
+  gap: 2px;
+}
+
+.card-edit {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  font-size: 13px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.card-edit:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* --- 卡片右侧按钮列：状态 + 删除 --- */
+.card-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* 状态按钮：点一下换下一个状态，颜色跟着变 */
+.status-btn {
+  padding: 3px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: nowrap;
+  color: var(--muted);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.status-btn:hover { border-color: var(--accent); }
+
+.status-btn.status-doing {
+  color: #8a6100;
+  background: #fdf6e3;
+  border-color: #ead9a8;
+}
+
+.status-btn.status-done {
+  color: #1a7f37;
+  background: #eaf7ee;
+  border-color: #b7dfc4;
+}
+
+/* 已完成的活动：标题划线、整体变淡 */
+.card.done { border-left-color: #b7dfc4; }
+
+.card.done .card-title {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.card.done .card-note {
+  text-decoration: line-through;
+  opacity: 0.75;
+}
+
+.card.done .card-meta { opacity: 0.8; }
+
+/* --- 日历里跟状态有关的样式 --- */
+
+/* 那天全做完了：灰底绿字的勾 */
+.cal-dot.alldone {
+  color: #1a7f37;
+  background: #eaf7ee;
+  box-shadow: inset 0 0 0 1px #b7dfc4;
+}
+
+.cal-cell.selected .cal-dot.alldone {
+  color: #1a7f37;
+  background: #fff;
+}
+
+/* --- 日历拉宽之后：格子变宽扁卡片，里面直接列出当天任务 --- */
+.cal-grid.expanded .cal-cell {
+  aspect-ratio: auto;
+  min-height: 84px;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 2px;
+  padding: 4px 5px;
+}
+
+.cal-grid.expanded .cal-num {
+  font-size: 12px;
+  text-align: left;
+}
+
+.cal-grid.expanded .cal-dot {
+  align-self: flex-start;
+  margin-bottom: 1px;
+}
+
+.cal-pill {
+  display: block;
+  max-width: 100%;
+  padding: 1px 4px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 4px;
+}
+
+.cal-pill.status-doing { color: #8a6100; background: #fdf6e3; }
+
+.cal-pill.status-done {
+  color: #1a7f37;
+  background: #eaf7ee;
+  text-decoration: line-through;
+}
+
+/* 选中那格是蓝底，药丸反色才看得清 */
+.cal-cell.selected .cal-pill {
+  color: var(--accent);
+  background: #fff;
+}
+
+.cal-cell.selected .cal-pill.status-done {
+  color: #1a7f37;
+  background: #eaf7ee;
+}
+
+.cal-more {
+  font-size: 10px;
+  line-height: 1.4;
+  text-align: left;
+  color: var(--muted);
+}
+
+.cal-cell.selected .cal-more { color: rgba(255, 255, 255, 0.88); }
+
+/* --- 「今天 · 明天」面板（左栏日历下面，把空白用起来） --- */
+.today-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.today-head h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.today-counts {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.today-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  margin-bottom: 4px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.today-row:hover { background: var(--accent-soft); }
+.today-row:last-child { margin-bottom: 0; }
+
+/* 今 / 明 的小徽章 */
+.today-badge {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  font-size: 11px;
+  line-height: 20px;
+  text-align: center;
+  color: #fff;
+  background: var(--accent);
+  border-radius: 5px;
+}
+
+.today-row.status-doing .today-badge { background: #c98a10; }
+.today-row.status-done  .today-badge { background: #b7dfc4; }
+
+/* 状态小圆点 */
+.today-dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  background: var(--accent);
+  border-radius: 50%;
+}
+
+.today-row.status-doing .today-dot { background: #d99a1a; }
+.today-row.status-done  .today-dot { background: #b7dfc4; }
+
+.today-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.today-row.status-done .today-title {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.today-time {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 面板里的状态按钮比卡片上的更小一号 */
+.today-status {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  font-size: 11px;
+  white-space: nowrap;
+  color: var(--muted);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.today-status:hover { border-color: var(--accent); }
+
+.today-row.status-doing .today-status {
+  color: #8a6100;
+  background: #fdf6e3;
+  border-color: #ead9a8;
+}
+
+.today-row.status-done .today-status {
+  color: #1a7f37;
+  background: #eaf7ee;
+  border-color: #b7dfc4;
+}
+
+.today-empty,
+.today-more {
+  margin: 0;
+  padding: 6px 8px;
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--muted);
+}
+
+.today-more { text-align: right; }
+
+/* --- 空状态 --- */
+.empty {
+  padding: 34px 16px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.empty strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 15px;
+  color: var(--text);
+}
+
+.empty-tip { margin: 0 0 14px; }
+
+/* 空状态 A 没有按钮，最后一行提示就不要留多余的下边距 */
+.empty-tip:last-child { margin-bottom: 0; }
+
+/* --- 日历 --- */
+.cal-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.cal-title {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.cal-nav {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  font-size: 17px;
+  line-height: 1;
+  color: var(--text);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.cal-nav:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.cal-today-btn {
+  padding: 5px 11px;
+  font-size: 13px;
+  color: var(--text);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.cal-today-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.cal-week {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.cal-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  aspect-ratio: 1 / 1;
+  padding: 0;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: #fff;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.cal-cell.blank {
+  background: transparent;
+  cursor: default;
+}
+
+.cal-cell:hover:not(.blank):not(.selected) { background: var(--accent-soft); }
+
+.cal-cell.past .cal-num { color: var(--muted); }
+
+.cal-cell.today {
+  font-weight: 700;
+  border-color: var(--accent);
+}
+
+.cal-cell.today .cal-num { color: var(--accent); }
+
+.cal-cell.selected {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.cal-cell.selected .cal-num { color: #fff; }
+.cal-cell.selected .cal-dot { color: var(--accent); background: #fff; }
+
+/* 有活动的那天，数字下面挂一个小圆点，点里写着条数 */
+.cal-dot {
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  font-size: 10px;
+  line-height: 15px;
+  color: #fff;
+  background: var(--accent);
+  border-radius: 999px;
+}
+
+/* --- 删除确认弹窗 --- */
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(31, 35, 40, 0.45);
+  z-index: 20;
+}
+
+.overlay[hidden] { display: none; }
+
+.dialog {
+  width: 100%;
+  max-width: 380px;
+  padding: 20px;
+  background: #fff;
+  border-radius: var(--radius);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22);
+}
+
+.dialog h3 {
+  margin: 0 0 10px;
+  font-size: 16px;
+}
+
+.dialog-title {
+  margin: 0 0 6px;
+  padding: 10px 12px;
+  font-weight: 600;
+  background: var(--bg);
+  border-radius: 6px;
+  word-break: break-word;
+}
+
+.dialog-note {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* --- 撤销提示条（固定在底部） --- */
+.undo-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  /* 从下面弹上来，带一次过冲 */
+  animation: undo-in 0.38s var(--spring);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: calc(100% - 32px);
+  padding: 11px 16px;
+  color: #fff;
+  background: #24292f;
+  border-radius: 999px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  font-size: 14px;
+  z-index: 30;
+}
+
+.undo-bar[hidden] { display: none; }
+
+.undo-bar button {
+  padding: 3px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #7cb0ff;
+  background: transparent;
+  border: 1px solid #7cb0ff;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.undo-bar button:hover {
+  color: #24292f;
+  background: #7cb0ff;
+}
+
+/* --- 读取异常提示条 --- */
+.warn-bar {
+  margin-bottom: 16px;
+  padding: 11px 14px;
+  font-size: 14px;
+  color: var(--warn);
+  background: var(--warn-soft);
+  border: 1px solid #ead9a8;
+  border-radius: 8px;
+}
+
+.warn-bar[hidden] { display: none; }
+
+/* =========================================================
+   交互动效
+   ---------------------------------------------------------
+   这里只放三处，每一处都要求「有反馈意义或收纳意义」，
+   不放纯装饰的（滚动进场、背景特效那类一律不做）。
+   ========================================================= */
+
+/* ① 类别 / 筛选按钮：点下去有弹性反馈，选中时颜色滑入而不是硬切 */
+.tag-btn,
+.filter {
+  transition: background-color 0.18s ease, color 0.18s ease,
+              border-color 0.18s ease, transform 0.1s ease;
+}
+
+.tag-btn:active,
+.filter:active {
+  transform: scale(0.93);          /* 按下去会缩一下，手感上有回应 */
+}
+
+.tag-btn.active,
+.filter.active {
+  animation: pill-pop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes pill-pop {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.1); }   /* 先弹出去一点 */
+  100% { transform: scale(1); }     /* 再弹回来 */
+}
+
+/* ② 删除时卡片收拢着飞出去（先让它走完，再真正删数据） */
+.card.leaving {
+  max-height: 0 !important;        /* 行内样式设了起始高度，这里用 !important 压过去 */
+  padding-top: 0;
+  padding-bottom: 0;
+  margin-bottom: 0;
+  border-width: 0;
+  opacity: 0;
+  transform: translateX(26px) scale(0.96);
+  overflow: hidden;
+  pointer-events: none;
+  transition: max-height 0.22s ease, opacity 0.16s ease,
+              transform 0.22s ease, margin 0.22s ease,
+              padding 0.22s ease, border-width 0.22s ease;
+}
+
+/* ②之二 碎裂：删除时卡片被切成几条往下掉 */
+.shatter-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;    /* 绝不挡住鼠标操作 */
+  z-index: 60;
+}
+
+.shatter-piece {
+  animation: shatter-fall 0.56s cubic-bezier(0.35, 0, 0.85, 1) forwards;
+  will-change: transform, opacity;
+}
+
+@keyframes shatter-fall {
+  0%   { opacity: 1;    transform: translate(0, 0) rotate(0deg); }
+  45%  { opacity: 0.55; }   /* 先淡一半，减少对下面卡片的遮挡 */
+  100% { opacity: 0;    transform: translate(var(--dx, 0px), 96px) rotate(var(--rot, 0deg)); }
+}
+
+/* ③ 长备注折叠 / 展开 */
+.card-note.clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;           /* 折叠时只留两行，末尾自动出省略号 */
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* 展开的那一下闪一下，让眼睛跟得上（只在真点「展开」时触发一次） */
+.card-note.note-flash {
+  animation: note-in 0.26s ease;
+}
+
+@keyframes note-in {
+  from { opacity: 0.35; }
+  to   { opacity: 1; }
+}
+
+.note-toggle {
+  margin-top: 2px;
+  padding: 0;
+  font-size: 12px;
+  color: var(--accent);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.note-toggle:hover { color: #2560d0; }
+
+/* =========================================================
+   视觉皮肤：非常规布局 + 撞色
+   ---------------------------------------------------------
+   和应用的功能性样式分开写，集中放这一块，方便整体调。
+   原则：视觉上放肆（硬边、实心投影、错位、撞色），
+        但文字一律水平、点击区域一律够大 —— 不然就没法用了。
+
+   ⚠️ 这一块必须放在所有响应式媒体查询之前。
+      放到文件末尾的话，会把 900px 那套堆叠规则覆盖掉，手机直接坏。
+   ========================================================= */
+
+:root {
+  --ink:   #111111;
+  --paper: #f0ede3;
+  --acid:  #d8ff00;
+  --blue:  #2b2bff;
+  --pink:  #ff3d8b;
+  --card:  #ffffff;
+  /* 内部分隔线用暖灰而不是纯黑 —— 外框已经够重了，
+     里面再全黑会吵得看不清内容 */
+  --line:  #c7c1b2;
+
+  /* 带过冲的弹簧曲线：0.34/1.56 那一段会"冲过头再回来"，
+     比 ease / linear 更有实体感。参考 motion-web 的原则：
+     每个动作都要有阻尼、有动量、有过冲回弹。 */
+  --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+/* ---------- 顶栏：一整块酸黄，粗黑下边框 ---------- */
+.topbar {
+  background: var(--acid);
+  border-bottom: 4px solid var(--ink);
+  text-align: left;
+  padding: 20px 22px 16px;
+}
+
+.topbar h1 {
+  font-family: "Arial Black", "Microsoft YaHei", sans-serif;
+  font-size: 30px;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+}
+
+.stats {
+  margin-top: 6px;
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  color: var(--ink);
+  opacity: 0.72;
+}
+
+/* ---------- 面板：粗黑边 + 实心投影 ---------- */
+.panel {
+  background: var(--card);
+  border: 2px solid var(--ink);
+  border-radius: 3px;
+  box-shadow: 5px 5px 0 var(--ink);
+}
+
+/* 错位：左栏两块故意往相反方向偏，右栏整体往下压一点 —— 不对称 */
+.col:first-of-type .panel:nth-of-type(1) { margin-left: -6px; }
+.col:first-of-type .panel:nth-of-type(2) { margin-left: 6px; }
+.col:last-of-type  .panel:nth-of-type(1) { margin-top: 12px; }
+
+/* ---------- 面板标题：一块颜色垫在底下 ---------- */
+.panel > h2 {
+  display: inline-block;
+  padding: 3px 11px;
+  font-family: "Arial Black", "Microsoft YaHei", sans-serif;
+  font-size: 15px;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  background: var(--acid);
+  border: 2px solid var(--ink);
+  margin-bottom: 14px;
+}
+
+/* ---------- 输入框：粗黑边、方角，聚焦时往右下沉 ---------- */
+.field input[type="text"],
+.field input[type="date"],
+.field input[type="time"],
+.field textarea {
+  border: 2px solid var(--ink);
+  border-radius: 2px;
+  background: #fff;
+}
+
+.field input:focus,
+.field textarea:focus {
+  border-color: var(--blue);
+  box-shadow: 3px 3px 0 var(--blue);
+  background: #fbffe0;
+}
+
+/* ---------- 按钮：黑边 + 硬投影，悬停抬起、按下陷进去 ---------- */
+.btn-primary,
+.btn-ghost,
+.btn-danger {
+  border: 2px solid var(--ink);
+  border-radius: 2px;
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.btn-primary { background: var(--blue); color: #fff; }
+.btn-primary:hover { background: #1f1fe0; }
+
+.btn-ghost { background: #fff; color: var(--ink); }
+.btn-ghost:hover { background: #f3f3f3; }
+
+.btn-danger { background: var(--pink); color: #fff; }
+.btn-danger:hover { background: #e02c78; }
+
+.btn-primary:hover,
+.btn-ghost:hover,
+.btn-danger:hover {
+  transform: translateY(-1px);
+  box-shadow: 5px 5px 0 var(--ink);
+}
+
+.btn-primary:active,
+.btn-ghost:active,
+.btn-danger:active {
+  transform: translateY(4px);
+  box-shadow: 0 0 0 var(--ink);
+}
+
+/* ---------- 类别 / 筛选按钮：直角，选中用该类别自己的颜色 ---------- */
+.filter,
+.tag-btn {
+  border: 2px solid var(--ink);
+  border-radius: 3px;
+  background: #fff;
+}
+
+.tag-btn.active {
+  color: #fff;
+  background: var(--tag-c, var(--blue));
+}
+
+.filter.active {
+  color: #fff;
+  background: var(--tag-c, var(--blue));
+}
+
+/* ---------- 日历：每格都描黑边，今天酸黄、选中电蓝 ---------- */
+.cal-cell {
+  border: 1.5px solid var(--ink);
+  border-radius: 2px;
+  background: #fff;
+}
+
+.cal-cell.blank { border-color: transparent; background: transparent; }
+
+.cal-cell:hover:not(.blank):not(.selected) { background: #eef7ff; }
+
+.cal-cell.today {
+  background: var(--acid);
+  border-color: var(--ink);
+}
+
+.cal-cell.today .cal-num { color: var(--ink); }
+
+.cal-cell.selected {
+  background: var(--blue);
+  border-color: var(--ink);
+}
+
+.cal-cell.selected .cal-num { color: #fff; }
+
+.cal-nav,
+.cal-today-btn {
+  border: 2px solid var(--ink);
+  border-radius: 2px;
+  box-shadow: 2px 2px 0 var(--ink);
+}
+
+/* ---------- 卡片：粗黑边，标签用类别色 ---------- */
+.card {
+  border: 2px solid var(--ink);
+  border-left-width: 7px;
+  border-radius: 2px;
+  box-shadow: 3px 3px 0 rgba(17, 17, 17, 0.16);
+}
+
+.card-tag {
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--tag-c, #666);
+  border-radius: 999px;
+}
+
+/* ---------- 弹窗和提示条也换成硬边 ---------- */
+.dialog {
+  border: 2px solid var(--ink);
+  border-radius: 3px;
+  box-shadow: 8px 8px 0 var(--ink);
+}
+
+.undo-bar,
+.reminder-bar,
+.day-chip {
+  border-radius: 3px;
+}
+
+/* --- 系统里开了「减少动态效果」就把上面这些动画全关掉（无障碍要求） --- */
+@media (prefers-reduced-motion: reduce) {
+  .tag-btn,
+  .filter,
+  .card.leaving,
+  .card.flash,
+  .card-note.note-flash,
+  .reminder-bar,
+  .undo-bar,
+  .list-tab.active,
+  .chat-bubble,
+  .splitter::after,
+  .shatter-piece {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* --- 窗口不够宽时，日历和小本本改成上下堆叠（日历在上） --- */
+@media (max-width: 900px) {
+  .wrap { grid-template-columns: 1fr; }
+  .splitter { display: none; }   /* 上下堆叠时没有左右之分，分隔条没意义 */
+
+  /* 堆叠之后取消左右错位，否则窄屏上会左右各凸出来一块 */
+  .col:first-of-type .panel:nth-of-type(1),
+  .col:first-of-type .panel:nth-of-type(2),
+  .col:last-of-type .panel:nth-of-type(1) {
+    margin-left: 0;
+    margin-top: 0;
+  }
+}
+
+/* --- 窄屏：手机上一屏放得下，不横向滚动 --- */
+@media (max-width: 560px) {
+  .wrap { padding: 12px 12px 96px; }
+  .panel { padding: 14px; }
+  .topbar h1 { font-size: 18px; }
+  .filters { width: 100%; }
+  .list-head { flex-direction: column; align-items: flex-start; }
+  .filter-count { align-self: flex-end; }
+}

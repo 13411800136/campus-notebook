@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>活动小本本</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ===== 顶栏：总数统计 ===== -->
+<header class="topbar">
+  <h1>活动小本本</h1>
+  <p class="stats" id="stats">共 0 条 · 即将到来 0 条 · 已完成 0 条</p>
+  <button type="button" class="link-btn" id="btn-notify" hidden>开启桌面提醒</button>
+</header>
+
+<!-- ===== 到点提醒条（默认隐藏） ===== -->
+<div class="reminder-bar" id="reminder-bar" hidden>
+  <span class="reminder-icon">⏰</span>
+  <span id="reminder-text"></span>
+  <button type="button" class="reminder-close" id="btn-reminder-close">知道了</button>
+</div>
+
+<main class="wrap" id="wrap">
+
+  <!-- ===== 左栏：日历 ===== -->
+  <div class="col">
+    <section class="panel">
+      <div class="cal-head">
+        <button type="button" class="cal-nav" id="cal-prev" title="上个月">‹</button>
+        <span class="cal-title" id="cal-title"></span>
+        <button type="button" class="cal-nav" id="cal-next" title="下个月">›</button>
+        <button type="button" class="cal-today-btn" id="cal-today">今天</button>
+      </div>
+
+      <div class="cal-week">
+        <span>一</span><span>二</span><span>三</span>
+        <span>四</span><span>五</span><span>六</span><span>日</span>
+      </div>
+
+      <div class="cal-grid" id="cal-grid"></div>
+    </section>
+
+    <!-- 今天 · 明天：把左栏日历下面的空白用起来 -->
+    <section class="panel" id="today-panel">
+      <div class="today-head">
+        <h2>今天 · 明天</h2>
+        <span class="today-counts" id="today-counts"></span>
+      </div>
+      <div id="today-list"></div>
+    </section>
+  </div>
+
+  <!-- 左右栏之间的分隔条：按住左右拖，就能把日历拉宽 -->
+  <div class="splitter" id="splitter" role="separator" aria-orientation="vertical"
+       aria-label="拖动调整左右栏宽度" tabindex="0" title="拖动调整宽度"></div>
+
+  <!-- ===== 右栏：小本本 ===== -->
+  <div class="col">
+
+    <!-- 录入表单 -->
+    <section class="panel" id="form-panel">
+      <h2>记一条活动</h2>
+
+      <!-- 编辑模式才出现（默认隐藏） -->
+      <div class="edit-banner" id="edit-banner" hidden>
+        <span>正在编辑「<strong id="editing-name"></strong>」</span>
+        <button type="button" class="link-btn" id="btn-cancel-edit">取消编辑</button>
+      </div>
+
+      <!-- AI 对话：打一句话 / 拖群消息 / 拖文档 / 拖截图，AI 说出它理解到什么，你点「填入表单」再存 -->
+      <div class="chat" id="chat">
+        <div class="chat-log" id="chat-log" aria-live="polite"></div>
+
+        <div class="chat-input">
+          <button type="button" class="chat-attach" id="chat-attach" title="选文件" aria-label="选文件">＋</button>
+          <textarea id="chat-text" rows="1"
+            placeholder="打一句话，例如：周三下午三点有职业规划讲座，在图书馆报告厅"></textarea>
+          <button type="button" class="btn-primary chat-send" id="chat-send">发送</button>
+        </div>
+        <!-- 不设 accept：任何文件都能选，读不出来会明确告诉你 -->
+        <input type="file" id="chat-file" hidden>
+
+        <!-- AI 设置：默认收起 -->
+        <div class="ai-bar">
+          <button type="button" class="link-btn" id="btn-ai-toggle">AI 识别设置</button>
+          <span class="ai-state" id="ai-state">当前：规则识别</span>
+        </div>
+
+        <div class="ai-panel" id="ai-panel" hidden>
+          <p class="ai-note">
+            填入你自己的 API Key，识别会更准。Key <b>只存在你这台电脑的浏览器里</b>，不会上传到任何地方。
+            没填、断网、或接口调用失败时，会自动退回规则识别，功能不受影响。
+          </p>
+
+          <div class="field">
+            <label for="ai-base">接口地址</label>
+            <input id="ai-base" type="text" placeholder="https://api.deepseek.com/chat/completions">
+          </div>
+
+          <div class="field">
+            <label for="ai-model">模型名</label>
+            <input id="ai-model" type="text" placeholder="deepseek-flash">
+          </div>
+
+          <div class="field">
+            <label for="ai-key">API Key</label>
+            <input id="ai-key" type="password" placeholder="sk-..." autocomplete="off">
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="btn-primary" id="btn-ai-save">保存</button>
+            <button type="button" class="btn-ghost" id="btn-ai-clear">清除</button>
+          </div>
+
+          <p class="error" id="ai-msg"></p>
+        </div>
+      </div>
+
+      <form id="event-form" novalidate>
+
+        <div class="field">
+          <label for="input-title">活动名称 <span class="req">必填</span></label>
+          <input id="input-title" type="text" maxlength="50" placeholder="例如：职业规划讲座">
+          <p class="error" id="error-title"></p>
+        </div>
+
+        <div class="field">
+          <label for="input-date">活动日期 <span class="req">必填</span></label>
+          <input id="input-date" type="date">
+          <p class="error" id="error-date"></p>
+        </div>
+
+        <div class="field">
+          <label>时间 <span class="hint">选填，不填就是全天</span></label>
+          <div class="time-row">
+            <input id="input-start" type="time" aria-label="开始时间">
+            <span class="time-sep">至</span>
+            <input id="input-end" type="time" aria-label="结束时间（选填）">
+          </div>
+          <p class="error" id="error-time"></p>
+        </div>
+
+        <div class="field">
+          <div class="label-row">
+            <label>类别</label>
+            <button type="button" class="link-btn" id="btn-manage-tags">管理</button>
+          </div>
+          <div class="tag-picker" id="tag-picker"></div>
+        </div>
+
+        <div class="field">
+          <label for="input-note">备注 <span class="hint">选填，可以直接粘贴群消息原文（最多 500 字）</span></label>
+          <textarea id="input-note" maxlength="500" rows="2"
+            placeholder="例如：三教201，18:30 开始，要扫码签到"></textarea>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn-primary" id="btn-save">存一条</button>
+          <button type="button" class="btn-ghost" id="btn-clear-fields">清除名称和备注</button>
+          <button type="button" class="btn-ghost" id="btn-sample">载入示例数据</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- 筛选 + 列表 -->
+    <section class="panel">
+      <!-- 待办 / 历史 两个视图 -->
+      <div class="list-tabs">
+        <button type="button" class="list-tab active" id="tab-active">待办</button>
+        <button type="button" class="list-tab" id="tab-history">历史</button>
+      </div>
+
+      <div class="list-head">
+        <div class="filters" id="filters"></div>
+        <p class="filter-count" id="filter-count"></p>
+      </div>
+
+      <!-- 在日历上点了某一天之后，这里会出现一个可关掉的标签 -->
+      <div class="day-chip" id="day-chip" hidden>
+        <span id="day-chip-text"></span>
+        <button type="button" class="day-chip-x" id="btn-clear-day" title="取消，看全部">✕</button>
+      </div>
+
+      <div id="list"></div>
+    </section>
+
+  </div>
+
+</main>
+
+<!-- ===== 删除确认弹窗（默认隐藏，点删除才显示） ===== -->
+<div class="overlay" id="overlay" hidden>
+  <div class="dialog" role="dialog" aria-modal="true">
+    <h3>确定删除这条活动？</h3>
+    <p class="dialog-title" id="dialog-title"></p>
+    <p class="dialog-note">删除后 5 秒内可以撤销。</p>
+    <div class="dialog-actions">
+      <button type="button" class="btn-ghost" id="btn-cancel">取消</button>
+      <button type="button" class="btn-danger" id="btn-confirm">删除</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 撤销提示条（默认隐藏，删除后才出现） ===== -->
+<div class="undo-bar" id="undo-bar" hidden>
+  <span id="undo-text"></span>
+  <button type="button" id="btn-undo">撤销</button>
+</div>
+
+<!-- ===== 读取异常提示条（默认隐藏，只在数据读不出来时出现） ===== -->
+<div class="warn-bar" id="warn-bar" hidden></div>
+
+<!-- ===== 管理类别弹窗（默认隐藏，点「管理」才显示） ===== -->
+<div class="overlay" id="tags-overlay" hidden>
+  <div class="dialog" role="dialog" aria-modal="true">
+    <h3>管理类别</h3>
+    <p class="dialog-note">删掉一个类别时，正在用它的活动会变成「未分类」，不会丢。</p>
+
+    <div class="tag-manage-list" id="tag-manage-list"></div>
+
+    <div class="tag-add-row">
+      <input id="input-new-tag" type="text" maxlength="6" placeholder="新类别名称（最多 6 个字）">
+      <button type="button" class="btn-ghost" id="btn-add-tag">添加</button>
+    </div>
+    <p class="error" id="tag-error"></p>
+
+    <div class="dialog-actions">
+      <button type="button" class="btn-primary" id="btn-tags-done">完成</button>
+    </div>
+  </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
