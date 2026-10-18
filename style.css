@@ -793,6 +793,21 @@ button { font-family: inherit; }
   font-size: 12px;
 }
 
+/* 自动写进列表之后那一行确认 —— 绿色，跟错误提示分开 */
+.chat-saved {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #1a7f37;
+  font-weight: 600;
+}
+
+.chat-undo {
+  margin-top: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
 .chat-input {
   display: flex;
   align-items: flex-end;

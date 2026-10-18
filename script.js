@@ -1015,6 +1015,10 @@ let chatMessages = [];
 // 两条同时飞出去，回来的顺序可能是反的，对话就串了。
 let chatBusy = false;
 
+// 这轮对话正在说的那条活动。用户说「改成周四」时，改的就是它。
+// 只在内存里 —— 跟对话记录同生共死，刷新就清空。
+let chatContext = { eventId: null };
+
 function pad2(n) { return String(n).padStart(2, '0'); }
 
 /**
@@ -1217,10 +1221,19 @@ async function aiChat(text, imageDataUrl, history) {
     '- 用户没在说活动、或者在问你问题的时候，activity 给 null。',
     '- 用户问「我今天有什么」「这周还有几件事」这类问题时，照上面那份待办清单回答，清单里没有就说没有，绝不编。',
     '',
+    'activity 和 action 怎么给：',
+    '- action 只有三种：',
+    '  "new"  = 这是一条**新**活动，之前没记过 → 程序会立刻把它写进列表，用户不用动手',
+    '  "edit" = 用户在**改**我上一轮刚给的那条（「改成周四」「地点不用记」「不是讲座是比赛」）→ 程序会更新那一条，不会多出一条',
+    '  "none" = 没有成形的活动，或者信息还不够（缺名称或缺日期）→ 什么都不会写',
+    '- 只要 action 是 "new" 或 "edit"，activity 里的 title 和 date **都必须有值**，否则改成 "none"，并在 reply 里只问缺的那一项。',
+    '- 用户又提到一件**不同**的事，即使和上一件很像，也用 "new"。',
+    '- 你不确定是不是在改上一条时，用 "new"，把话说清楚让用户自己看列表。',
+    '',
     '只输出一个 JSON 对象，不要 Markdown 代码块，不要多余的解释。格式：',
-    '{"reply":"给用户看的一句话","activity":null}',
+    '{"reply":"给用户看的一句话","activity":null,"action":"none"}',
     '或者',
-    '{"reply":"...","activity":{"title":"...","date":"YYYY-MM-DD","startTime":"HH:MM","endTime":"HH:MM","tag":"类别名"}}'
+    '{"reply":"...","activity":{"title":"...","date":"YYYY-MM-DD","startTime":"HH:MM","endTime":"HH:MM","tag":"类别名"},"action":"new"}'
   ].join('\n');
 
   const messages = [{ role: 'system', content: system }];
@@ -1301,12 +1314,17 @@ function parseAiReply(content, text) {
   }
 
   if (!got || typeof got !== 'object' || Array.isArray(got)) {
-    return { reply: raw.slice(0, 300), activity: null };
+    return { reply: raw.slice(0, 300), activity: null, action: 'none' };
   }
+
+  const activity = normalizeActivity(got.activity, text);
 
   return {
     reply: typeof got.reply === 'string' ? got.reply.trim().slice(0, 300) : '',
-    activity: normalizeActivity(got.activity, text)
+    activity: activity,
+    // 模型没给 action 就按「新的一条」处理：用户要的是别动手。
+    // 真重复了有查重兜着，不会存两份。
+    action: activity ? (got.action === 'edit' ? 'edit' : 'new') : 'none'
   };
 }
 
@@ -1441,7 +1459,7 @@ function renderChat() {
   if (chatMessages.length === 0) {
     const tip = document.createElement('p');
     tip.className = 'chat-empty';
-    tip.textContent = '可以随便聊，也可以直接把活动丢进来：打字、拖群消息、拖文档、拖截图都行。聊到确定要记的时候，点「填入表单」再存。';
+    tip.textContent = '随便聊，也可以直接把活动丢进来：打字、拖群消息、拖文档、拖截图都行。说到一条活动，我自己记进列表，不用你点存；记错了点「撤销」就回来。';
     log.appendChild(tip);
     return;
   }
@@ -1477,6 +1495,32 @@ function renderChat() {
       card.textContent = (msg.source ? msg.source + '：\n' : '') + describeParsed(msg.parsed);
       bubble.appendChild(card);
 
+      const saved = msg.saved;
+
+      // 已经自动写进列表了：只说结果，再给一个反悔的出口
+      if (saved && saved.kind !== 'undone') {
+        const line = document.createElement('p');
+        line.className = 'chat-saved';
+        line.textContent =
+          saved.kind === 'created'   ? '✓ 已经自动记进列表了' :
+          saved.kind === 'updated'   ? '✓ 已经更新列表里那条' :
+                                       '列表里已经有这条了';
+        bubble.appendChild(line);
+
+        if (saved.kind === 'created' || saved.kind === 'updated') {
+          const undo = document.createElement('button');
+          undo.type = 'button';
+          undo.className = 'btn-ghost chat-undo';
+          undo.textContent = '撤销';
+          undo.addEventListener('click', () => undoChatSave(msg));
+          bubble.appendChild(undo);
+        }
+        row.appendChild(bubble);
+        log.appendChild(row);
+        return;               // 已经存了，就别再给「填入表单」
+      }
+
+      // 还没存（信息不全，或者刚撤销过）：给个手动填表的出口
       const fill = document.createElement('button');
       fill.type = 'button';
       fill.className = 'btn-primary chat-fill';
@@ -1550,14 +1594,21 @@ async function askAI(text, imageDataUrl, label) {
       }
 
       if (got) {
+        // 说清楚了就直接写进列表，用户不用点任何按钮
+        const saved = (got.activity && got.action !== 'none')
+          ? autoSaveActivity(got.activity, got.action)
+          : null;
+
         dropPending(thinking);
         pushChat({
           role: 'ai',
-          text: got.reply || (got.activity ? '我把这条整理好了，你看看对不对：' : '我在。'),
+          text: got.reply || (got.activity ? '记下了。' : '我在。'),
           parsed: got.activity,
+          saved: saved,
           source: imageDataUrl ? 'AI 识图' : 'AI 识别',
           sourceText: text || ''
         });
+        if (saved) renderAll();     // 日历、列表、计数立刻跟着变
         renderChat();
         return;
       }
@@ -1575,14 +1626,17 @@ async function askAI(text, imageDataUrl, label) {
       }
 
       const parsed = parseActivityText(text);
+      const saved = autoSaveActivity(parsed, 'new');
       dropPending(thinking);
       pushChat({
         role: 'ai',
         text: '刚才没连上 AI（' + failReason + '），我先用本机规则看了看：',
         parsed: parsed,
+        saved: saved,
         source: '规则识别（AI 调用失败）',
         sourceText: text
       });
+      if (saved) renderAll();
       renderChat();
       return;
     }
@@ -1599,14 +1653,19 @@ async function askAI(text, imageDataUrl, label) {
     }
 
     const parsed = parseActivityText(text);
+    const saved = autoSaveActivity(parsed, 'new');
     dropPending(thinking);
     pushChat({
       role: 'ai',
-      text: '我理解成这样，你看看对不对：\n（想让我真的能聊天，得在下面「AI 识别设置」里填一个 API Key——现在用的是本机规则，只会认活动。）',
+      text: saved
+        ? '我先用本机规则记下了。想让我真的会聊天，在下面填个 API Key。'
+        : '我没读出日期，先不写进列表——你说个时间，比如「10月25日下午三点」。\n（想让我真的能聊天，得在下面「AI 识别设置」里填一个 API Key。）',
       parsed: parsed,
+      saved: saved,
       source: '规则识别（没配 AI，用的是本机规则）',
       sourceText: text
     });
+    if (saved) renderAll();
     renderChat();
   } finally {
     setChatBusy(false);
@@ -1834,6 +1893,107 @@ function applyParsedToForm(got, text) {
   }
 
   clearFieldErrors();
+}
+
+/**
+ * 把识别出来的活动**直接写进列表** —— 用户不用点任何按钮。
+ * 返回 { kind, id, before? }，kind 是 created / updated / duplicate。
+ * 名称或日期缺一个就返回 null，一个字都不写（宁可让它再问一句）。
+ */
+function autoSaveActivity(a, action) {
+  if (!a || !a.title || !isValidDateStr(a.date)) return null;
+
+  // 说的是「改」，而且那一条还在 → 就地更新，绝不新加一条
+  if (action === 'edit' && chatContext.eventId) {
+    const ev = events.find(e => e.id === chatContext.eventId);
+    if (ev) {
+      const before = {
+        title: ev.title, date: ev.date,
+        startTime: ev.startTime || '', endTime: ev.endTime || '', tag: ev.tag
+      };
+      ev.title = a.title;
+      ev.date = a.date;
+      ev.startTime = a.startTime || '';
+      ev.endTime = a.endTime || '';
+      if (tags.indexOf(a.tag) !== -1) ev.tag = a.tag;
+
+      saveEvents();
+      flashSaved(ev.id);
+      return { kind: 'updated', id: ev.id, before: before };
+    }
+  }
+
+  // 一模一样的不存第二遍 —— 模型有时会把上一轮的东西再复述一次
+  const dup = events.find(e =>
+    e.title === a.title && e.date === a.date &&
+    (e.startTime || '') === (a.startTime || ''));
+  if (dup) {
+    chatContext.eventId = dup.id;
+    return { kind: 'duplicate', id: dup.id };
+  }
+
+  const ev = {
+    id: 'e-' + Date.now(),
+    title: a.title,
+    date: a.date,
+    startTime: a.startTime || '',
+    endTime: a.endTime || '',
+    tag: tags.indexOf(a.tag) !== -1 ? a.tag : FALLBACK_TAG,
+    note: '',                      // 备注留空：对话里的原话不往这儿塞
+    status: 'todo',
+    createdAt: Date.now()
+  };
+  events.push(ev);
+  saveEvents();
+
+  chatContext.eventId = ev.id;
+  flashSaved(ev.id);               // 让列表里那条闪一下，看得见它落进去了
+  return { kind: 'created', id: ev.id };
+}
+
+/**
+ * 让指定那条卡片高亮一下，1.2 秒后自动取消。
+ * 不清掉的话，之后每次重画列表它都会再闪一次。
+ */
+function flashSaved(id) {
+  lastSavedId = id;
+  if (typeof setTimeout !== 'function') return;
+  setTimeout(() => {
+    if (lastSavedId !== id) return;
+    lastSavedId = null;
+    renderList();
+  }, 1200);
+}
+
+/** 自动记错了？一键撤回 */
+function undoChatSave(msg) {
+  const s = msg && msg.saved;
+  if (!s) return;
+  if (s.kind !== 'created' && s.kind !== 'updated') return;
+
+  if (s.kind === 'created') {
+    const i = events.findIndex(e => e.id === s.id);
+    if (i !== -1) events.splice(i, 1);
+  } else if (s.before) {
+    const ev = events.find(e => e.id === s.id);
+    if (ev) {
+      ev.title = s.before.title;
+      ev.date = s.before.date;
+      ev.startTime = s.before.startTime;
+      ev.endTime = s.before.endTime;
+      ev.tag = s.before.tag;
+    }
+  }
+
+  // 这一轮对话别再指着那条了，否则下一句「改成周五」会改到一条不存在的记录
+  if (chatContext.eventId === s.id) chatContext.eventId = null;
+  lastSavedId = null;
+
+  saveEvents();
+  renderAll();
+
+  msg.saved = { kind: 'undone' };
+  renderChat();
 }
 
 /** 接上四种入口：发送按钮、Enter、选文件、拖拽、粘贴 */
