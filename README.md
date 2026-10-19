@@ -1,4 +1,4 @@
-# 活动小本本
+﻿# 活动小本本
 
 把校园活动录进网页，用**日历**和**列表**两种方式查看，一眼看出哪天有事、哪些还没做完；纯前端、免注册、**双击 `index.html` 就能用**。
 
@@ -29,7 +29,7 @@
 
 ## 本地启动步骤（Windows 11）
 
-1. 拿到代码：`git clone https://github.com/13411800136/-.git`；没装 Git 就在仓库页面点绿色 `Code` → `Download ZIP` 解压
+1. 拿到代码：`git clone https://github.com/13411800136/campus-notebook.git`；没装 Git 就在仓库页面点绿色 `Code` → `Download ZIP` 解压
 2. 打开项目文件夹
 3. **双击 `index.html`**
 
@@ -40,8 +40,8 @@
 
 ## 在线体验
 
-> 仓库地址：`https://github.com/13411800136/-`
-> 页面地址（在仓库 Settings → Pages 选 `main` / `/ (root)` 后生效）：`https://13411800136.github.io/-/`
+> 仓库地址：`https://github.com/13411800136/campus-notebook`（校园信息整理器）
+> 页面地址：`https://13411800136.github.io/campus-notebook/`
 > 部署只有三步：仓库 → Settings → Pages → Source 选 `main` 分支的 `/ (root)`，保存后等一两分钟。根目录打开就是应用，展示页在 `/landing.html`。
 > 没部署也没关系——录屏同样满足考核要求。
 
