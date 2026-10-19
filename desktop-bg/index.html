@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rhine Lab · 背景层</title>
+
+<!--
+  背景层：直接复用已经装好的 Wallpaper Engine 壁纸资源
+  （D:\SteamLibrary\steamapps\workshop\content\431960\3799142774），
+  不复制、不修改那套文件；这里只负责：
+  1) 伪造一个 WE 宿主，把开场、HUD、音乐、导航全部关掉；
+  2) 只留下 3D 档案阵列的那一层画布；
+  3) 让宿主按需改主题/画质（activity-bg.js 里读 URL 参数）。
+  如果哪天壁纸被卸载/移动，把下面 <base> 换成新路径即可。
+-->
+<base href="file:///D:/SteamLibrary/steamapps/workshop/content/431960/3799142774/">
+
+<link rel="stylesheet" href="./assets/index-Bg7aiZZN.css">
+
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    overflow: hidden;
+    background: #0f1011;
+  }
+
+  /* 画布铺满：#stage 是壁纸自己的 1920×1080 设计画布，
+     定位和缩放都交回它自己的 JS（这里不要动 left/top/transform） */
+  #stage > *:not(.three-scene) { display: none !important; }
+  #viewport > .mobile-entry,
+  #loading { display: none !important; }
+
+  #stage > .three-scene { position: absolute; inset: 0; }
+  #stage canvas { display: block; width: 100% !important; height: 100% !important; }
+
+  /* 背景不接收鼠标，指针全部交给上面那层应用 */
+  html, body, #viewport, #stage, #stage canvas { pointer-events: none !important; }
+
+  /* 万一有人直接双击了这个文件：给一句人话，别显示一片空白 */
+  #direct-hint {
+    position: fixed;
+    inset: 0;
+    z-index: 99999;
+    display: none;
+    place-items: center;
+    padding: 40px;
+    font-family: MiSans, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    color: #2b2a26;
+    background: radial-gradient(120% 90% at 30% 20%, #26292d, #14161a 60%, #0b0c0d 100%);
+  }
+  #direct-hint .card {
+    max-width: 460px;
+    padding: 26px 28px;
+    border-radius: 18px;
+    background: rgba(252, 249, 242, 0.96);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25), 0 18px 40px rgba(0, 0, 0, 0.35);
+    font-size: 14px;
+    line-height: 1.85;
+  }
+  #direct-hint b { display: block; margin-bottom: 8px; font-size: 15px; }
+  #direct-hint code {
+    padding: 1px 6px;
+    border-radius: 5px;
+    background: rgba(60, 52, 38, 0.08);
+    font-size: 12.5px;
+  }
+</style>
+</head>
+<body>
+
+<div id="direct-hint">
+  <div class="card">
+    <b>这是背景层，不是应用本体</b>
+    它由「活动小本本」窗口自动加载。请双击桌面上的
+    <code>活动小本本</code> 快捷方式打开应用；
+    直接打开项目里的 <code>index.html</code> 也能用，只是没有这层 3D 背景。
+  </div>
+</div>
+
+<main id="viewport"><div id="stage"></div></main>
+
+<script>
+  /* ---- 1. 伪造 WE 宿主：属性在模块读到之前就摆好 ---- */
+  (function () {
+    var params = new URLSearchParams(location.search);
+    var theme = params.get('theme') === 'light' ? 'light' : 'dark';
+    var ratio = params.get('ratio') || '1';
+
+    var PROPS = {
+      boot: { value: false },
+      opendetail: { value: 'skip' },
+      colortheme: { value: theme },
+      load3donstartup: { value: true },
+      desktopmode: { value: params.get('mode') === 'archive' ? 'archive' : 'workbench' },
+      modelprecision: { value: 'high' },
+      renderquality: { value: 'original' },
+      qualitypixelratio: { value: ratio },
+      autotheme: { value: false },
+      music: { value: false },
+      sound: { value: false },
+      reduced: { value: false },
+      hudparallax: { value: false },
+      hudtracking: { value: false },
+      showbrand: { value: false },
+      showfooter: { value: false },
+      shownavigation: { value: false },
+      showmodebutton: { value: false },
+      showworkbenchbutton: { value: false },
+      showgame: { value: false },
+      showclock: { value: false },
+      enabletime: { value: false },
+      enabletasks: { value: false },
+      enableevent: { value: false },
+      enablefocus: { value: false },
+      enablemedia: { value: false }
+    };
+
+    window.rhineWallpaperHost = { properties: PROPS, fps: 60, paused: false };
+
+    var resolveInitial;
+    window.rhineWallpaperPropertiesReady = new Promise(function (resolve) { resolveInitial = resolve; });
+
+    window.wallpaperPropertyListener = {
+      applyUserProperties: function (properties) {
+        Object.assign(window.rhineWallpaperHost.properties, properties || {});
+        window.dispatchEvent(new CustomEvent('rhine-wallpaper-properties', { detail: properties }));
+        resolveInitial();
+      },
+      applyGeneralProperties: function (properties) {
+        if (properties && Number.isFinite(properties.fps) && properties.fps > 0) {
+          window.rhineWallpaperHost.fps = properties.fps;
+        }
+      },
+      setPaused: function (paused) {
+        window.rhineWallpaperHost.paused = !!paused;
+        window.dispatchEvent(new Event('rhine-wallpaper-pause'));
+      }
+    };
+
+    window.rhineWallpaperMedia = {};
+    window.rhineWallpaperSpectrum = { samples: [], time: 0 };
+
+    /* 开场、音乐这些默认值在模块 init 时读的就是上面的 PROPS，
+       这里再 resolve 一次，壁纸就不会卡在「CONNECTING…」上 */
+    resolveInitial();
+
+    /* 模块自己的监听器注册完再补一次，保证属性真的生效 */
+    window.addEventListener('load', function () {
+      setTimeout(function () { window.wallpaperPropertyListener.applyUserProperties(PROPS); }, 60);
+    });
+  })();
+</script>
+
+<script type="module" src="./assets/index-DGZ5gDxu.js"></script>
+
+<script>
+  /* ---- 2. 直接双击打开时给提示（被应用嵌着时才跑 3D） ---- */
+  (function () {
+    if (window.self !== window.top) return;
+    var hint = document.getElementById('direct-hint');
+    if (hint) hint.style.display = 'grid';
+  })();
+
+  /* ---- 3. 告诉外层：场景什么时候算是画出来了 ---- */
+  (function () {
+    var started = Date.now();
+    var done = false;
+    var canvas = null;
+
+    function tick() {
+      canvas = document.querySelector('#stage canvas');
+      var size = canvas ? canvas.getBoundingClientRect() : null;
+      var ready = canvas && size && size.width > 8 && size.height > 8;
+      if (ready && !done) {
+        done = true;
+        try { parent.postMessage({ type: 'rhine-bg-ready', ms: Date.now() - started }, '*'); } catch (e) {}
+      }
+      if (Date.now() - started > 20000 && !done) {
+        done = true;
+        try { parent.postMessage({ type: 'rhine-bg-timeout' }, '*'); } catch (e) {}
+      }
+      if (!done) setTimeout(tick, 250);
+    }
+    setTimeout(tick, 400);
+  })();
+</script>
+
+</body>
+</html>

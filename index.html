@@ -5,8 +5,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>活动小本本</title>
 <link rel="stylesheet" href="style.css">
+<!-- 交互背景皮肤：底部 3D 桌面 + 暖纸玻璃面板（只覆盖视觉，不动结构） -->
+<link rel="stylesheet" href="desktop-theme.css">
 </head>
 <body>
+
+<!-- ===== 交互背景：Rhine Lab 档案阵列（只当背景，不抢操作） ===== -->
+<div id="desk-bg" aria-hidden="true">
+  <div class="desk-bg-parallax">
+    <iframe id="desk-bg-frame" src="./desktop-bg/index.html?theme=dark" title="" tabindex="-1" loading="eager"></iframe>
+  </div>
+  <div class="desk-bg-light"></div>
+  <div class="desk-bg-veil"></div>
+</div>
 
 <!-- ===== 顶栏：总数统计 ===== -->
 <header class="topbar">
@@ -49,6 +60,28 @@
         <span class="today-counts" id="today-counts"></span>
       </div>
       <div id="today-list"></div>
+    </section>
+
+    <!-- 筛选 + 列表：放在日历下面，把左栏用满 -->
+    <section class="panel" id="list-panel">
+      <!-- 待办 / 历史 两个视图 -->
+      <div class="list-tabs">
+        <button type="button" class="list-tab active" id="tab-active">待办</button>
+        <button type="button" class="list-tab" id="tab-history">历史</button>
+      </div>
+
+      <div class="list-head">
+        <div class="filters" id="filters"></div>
+        <p class="filter-count" id="filter-count"></p>
+      </div>
+
+      <!-- 在日历上点了某一天之后，这里会出现一个可关掉的标签 -->
+      <div class="day-chip" id="day-chip" hidden>
+        <span id="day-chip-text"></span>
+        <button type="button" class="day-chip-x" id="btn-clear-day" title="取消，看全部">✕</button>
+      </div>
+
+      <div id="list"></div>
     </section>
   </div>
 
@@ -166,27 +199,7 @@
       </form>
     </section>
 
-    <!-- 筛选 + 列表 -->
-    <section class="panel">
-      <!-- 待办 / 历史 两个视图 -->
-      <div class="list-tabs">
-        <button type="button" class="list-tab active" id="tab-active">待办</button>
-        <button type="button" class="list-tab" id="tab-history">历史</button>
-      </div>
-
-      <div class="list-head">
-        <div class="filters" id="filters"></div>
-        <p class="filter-count" id="filter-count"></p>
-      </div>
-
-      <!-- 在日历上点了某一天之后，这里会出现一个可关掉的标签 -->
-      <div class="day-chip" id="day-chip" hidden>
-        <span id="day-chip-text"></span>
-        <button type="button" class="day-chip-x" id="btn-clear-day" title="取消，看全部">✕</button>
-      </div>
-
-      <div id="list"></div>
-    </section>
+    <!-- 筛选 + 列表已经挪到左栏日历下面了 -->
 
   </div>
 
@@ -235,5 +248,6 @@
 </div>
 
 <script src="script.js"></script>
+<script src="desktop-bg.js"></script>
 </body>
 </html>

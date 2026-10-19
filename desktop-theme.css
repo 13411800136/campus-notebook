@@ -1,0 +1,637 @@
+﻿/* =========================================================
+   活动小本本 · 交互背景皮肤（Rhine Lab 桌面）
+   ---------------------------------------------------------
+   只做两件事：
+   1) 在页面底层放一层 Rhine Lab 的 3D 档案阵列（desktop-bg/ 里的
+      宿主页，直接复用 Wallpaper Engine 壁纸的模型与渲染器）；
+   2) 把应用自己那套"酸黄 + 电蓝 + 硬投影"换成压在深色玻璃上的
+      暖纸卡片：自然色、分层柔性投影、细描边。
+
+   不新增任何交互，原有 class / 结构 / 脚本一律不动。
+   ========================================================= */
+
+/* ---------- ① 背景层 ---------- */
+
+html {
+  background: #0b0c0d;
+  height: 100%;
+}
+
+body {
+  background: transparent !important;
+  min-height: 100%;
+}
+
+#desk-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 90% at 28% 18%, #26292d 0%, #16181b 46%, #0b0c0d 100%);
+}
+
+#desk-bg .desk-bg-parallax {
+  position: absolute;
+  inset: 0;
+  will-change: transform;
+  transform: translate3d(0, 0, 0);
+}
+
+#desk-bg iframe {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+  transform: translate(-50%, -50%);
+  transform-origin: center center;
+  opacity: 0;
+  transition: opacity 1.4s ease;
+  /* 压一点亮度和饱和，别抢应用的注意力 */
+  filter: brightness(0.82) saturate(0.92) contrast(1.03);
+}
+
+#desk-bg.is-ready iframe { opacity: 1; }
+
+/* 跟着鼠标走的一团柔光：只在背景这层，不挡操作 */
+#desk-bg .desk-bg-light {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 1.2s ease;
+  mix-blend-mode: screen;
+  background:
+    radial-gradient(460px circle at var(--mx, 50vw) var(--my, 35vh),
+      rgba(150, 200, 165, 0.16) 0%,
+      rgba(130, 180, 145, 0.07) 45%,
+      rgba(120, 170, 135, 0) 72%);
+}
+
+#desk-bg.is-ready .desk-bg-light { opacity: 1; }
+
+/* 让四角和底部沉下去，中间留给内容 */
+#desk-bg .desk-bg-veil {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(115% 85% at 50% 8%, rgba(9, 10, 11, 0) 0%, rgba(9, 10, 11, 0.30) 58%, rgba(7, 8, 9, 0.66) 100%),
+    linear-gradient(180deg, rgba(9, 10, 11, 0.34) 0%, rgba(9, 10, 11, 0.06) 34%, rgba(7, 8, 9, 0.42) 100%);
+}
+
+/* ---------- ② 桌面基础色 ---------- */
+:root {
+  --paper: transparent;
+  --card: #fdfaf4;
+  --ink: #2b2a26;
+  --line: #e2dbcb;
+
+  --accent: #6f8c6b;
+  --accent-soft: #ecefe4;
+  --danger: #a9714f;
+  --warn: #8a6a2f;
+  --warn-soft: #faf3e2;
+
+  --acid: #e7e0cd;
+  --blue: #6f8c6b;
+  --pink: #b08064;
+
+  /* 压在深色桌面上的一层纸：边框 + 分层投影 */
+  --glass: rgba(252, 249, 242, 0.94);
+  --glass-soft: rgba(250, 246, 237, 0.88);
+  --shadow-1: 0 1px 1px rgba(8, 9, 10, 0.20);
+  --shadow-2: 0 6px 16px rgba(8, 9, 10, 0.26);
+  --shadow-3: 0 18px 38px rgba(8, 9, 10, 0.30);
+  --shadow-4: 0 40px 80px rgba(8, 9, 10, 0.34);
+  --hairline: rgba(60, 52, 38, 0.16);
+  --rim: inset 0 1px 0 rgba(255, 255, 255, 0.92);
+}
+
+body {
+  color: var(--ink);
+  font-family: MiSans, "Mi Sans", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- ③ 顶栏：一条浮起来的窄带 ---------- */
+
+.topbar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: clamp(1180px, 78vw, 1900px);
+  margin: 20px auto 0;
+  padding: 12px 20px;
+  background: linear-gradient(180deg, rgba(252, 249, 242, 0.96), rgba(248, 243, 233, 0.90));
+  border: 1px solid var(--hairline);
+  border-radius: 16px;
+  box-shadow: var(--shadow-1), var(--shadow-2), var(--shadow-3), var(--rim);
+  text-align: left;
+  backdrop-filter: blur(10px) saturate(1.05);
+  -webkit-backdrop-filter: blur(10px) saturate(1.05);
+}
+
+.topbar h1 {
+  flex: 0 0 auto;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  color: var(--ink);
+}
+
+.topbar h1::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 10px;
+  border-radius: 2px;
+  background: linear-gradient(160deg, #86a37f, #5d7856);
+  box-shadow: 0 1px 2px rgba(40, 55, 36, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  vertical-align: 2px;
+}
+
+.stats {
+  margin: 0 auto 0 0;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: rgba(43, 42, 38, 0.62);
+}
+
+.topbar .link-btn {
+  font-size: 12px;
+  color: var(--accent);
+}
+
+/* ---------- ④ 主容器：拉开边距，让桌面露出来 ---------- */
+
+.wrap {
+  max-width: clamp(1180px, 78vw, 1900px);
+  padding: 18px 0 80px;
+  gap: 18px;
+  align-items: stretch;
+  /* 左栏装日历 + 今天·明天 + 待办/历史，给一个上限，别让日历格子被拉得太大 */
+  grid-template-columns: var(--cal-w, minmax(420px, 600px)) 12px minmax(520px, 1fr);
+}
+
+.col:first-of-type { align-self: start; }
+
+/* 右边只有「记一条活动」：窗口够高时让它跟着停在视野里。
+   窗口矮的时候不做，免得面板被裁掉看不全。 */
+@media (min-width: 901px) and (min-height: 860px) {
+  .col:last-of-type > .panel {
+    position: sticky;
+    top: 18px;
+  }
+}
+
+.col {
+  margin: 0;
+}
+
+/* 左栏三块面板：轻微错位 + 统一间距，右栏只有表单 */
+.col:first-of-type .panel:nth-of-type(1) { margin: 10px 0 16px -2px; }
+.col:first-of-type .panel:nth-of-type(2) { margin: 0 0 16px 2px; }
+.col:first-of-type .panel:nth-of-type(3) { margin: 0 0 0 -2px; }
+.col:last-of-type .panel:nth-of-type(1) { margin: 0; }
+.col:last-of-type .panel:nth-of-type(2) { margin: 0; }
+
+/* ---------- ⑤ 面板：压在桌面上的暖纸片 ---------- */
+
+.panel {
+  background: linear-gradient(170deg, var(--glass) 0%, var(--glass-soft) 100%);
+  border: 1px solid var(--hairline);
+  border-radius: 18px;
+  box-shadow:
+    var(--shadow-1),
+    var(--shadow-2),
+    var(--shadow-3),
+    var(--rim),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+  padding: 18px;
+}
+
+.panel > h2 {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 5px 13px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+  background: linear-gradient(180deg, #f2ede0, #e9e2d1);
+  border: 1px solid rgba(64, 56, 42, 0.10);
+  border-radius: 10px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 2px rgba(62, 52, 36, 0.08);
+}
+
+/* ---------- ⑥ 输入框 ---------- */
+
+.field input[type="text"],
+.field input[type="date"],
+.field input[type="time"],
+.field textarea {
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: inset 0 1px 2px rgba(62, 52, 36, 0.05);
+  transition: border-color 0.22s ease, box-shadow 0.22s ease, background 0.22s ease;
+}
+
+.field input:focus,
+.field textarea:focus {
+  outline: none;
+  border-color: rgba(111, 140, 107, 0.55);
+  background: #fffefb;
+  box-shadow: 0 0 0 3px rgba(111, 140, 107, 0.14), inset 0 1px 2px rgba(62, 52, 36, 0.04);
+}
+
+#chat-text {
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.86);
+}
+
+#chat-text:focus {
+  border-color: rgba(111, 140, 107, 0.55);
+  background: #fffefb;
+  box-shadow: 0 0 0 3px rgba(111, 140, 107, 0.14);
+}
+
+.chat-log {
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  box-shadow: inset 0 1px 2px rgba(62, 52, 36, 0.04);
+}
+
+/* ---------- ⑦ 按钮 / 标签 / 日历 ---------- */
+
+.btn-primary,
+.btn-ghost,
+.btn-danger {
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  box-shadow: 0 1px 1px rgba(8, 9, 10, 0.10), 0 3px 7px rgba(8, 9, 10, 0.12);
+  transition: transform 0.16s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.btn-primary {
+  background: linear-gradient(180deg, #7f9c79, #6a8664);
+  border-color: rgba(64, 84, 58, 0.38);
+  color: #fdfbf5;
+  text-shadow: 0 1px 1px rgba(38, 54, 34, 0.30);
+}
+
+.btn-primary:hover {
+  background: linear-gradient(180deg, #88a582, #718d6b);
+  box-shadow: 0 2px 4px rgba(8, 9, 10, 0.14), 0 7px 16px rgba(8, 9, 10, 0.16);
+}
+
+.btn-ghost { background: rgba(255, 255, 255, 0.9); color: var(--ink); }
+.btn-ghost:hover { background: #f7f2e6; }
+
+.btn-danger {
+  background: linear-gradient(180deg, #bb8a6d, #a97a5e);
+  border-color: rgba(110, 74, 54, 0.32);
+  color: #fffaf4;
+}
+
+.btn-primary:hover,
+.btn-ghost:hover,
+.btn-danger:hover { transform: translateY(-1px); }
+
+.btn-primary:active,
+.btn-ghost:active,
+.btn-danger:active {
+  transform: translateY(1px);
+  box-shadow: inset 0 1px 3px rgba(62, 52, 36, 0.16);
+}
+
+.chat-attach {
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 1px 2px rgba(8, 9, 10, 0.10);
+  color: rgba(43, 42, 38, 0.66);
+}
+
+.chat-attach:hover { background: #f6f2e6; }
+.chat-attach:active { transform: translateY(1px); box-shadow: inset 0 1px 3px rgba(62, 52, 36, 0.14); }
+
+.filter,
+.tag-btn {
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 1px 1px rgba(8, 9, 10, 0.08);
+}
+
+.tag-btn.active,
+.filter.active {
+  background: linear-gradient(180deg, #7f9c79, #6a8664);
+  border-color: rgba(64, 84, 58, 0.38);
+  color: #fdfbf5;
+  box-shadow: 0 2px 6px rgba(8, 9, 10, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.cal-cell {
+  border: 1px solid rgba(64, 56, 42, 0.10);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 1px 1px rgba(62, 52, 36, 0.04);
+  min-width: 0;
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* 拉宽后日历会在格子里列当天活动：轨道锁成 1fr、格子裁切，
+   这样再长的标题也挤不歪七列 */
+.cal-grid { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+
+.cal-grid.expanded .cal-cell {
+  min-width: 0;
+  overflow: hidden;
+  align-content: flex-start;
+  justify-content: flex-start;
+  padding: 5px 6px;
+}
+
+.cal-grid.expanded .cal-pill {
+  width: 100%;
+  max-width: 100%;
+}
+
+.cal-cell.blank { border-color: transparent; background: transparent; box-shadow: none; }
+
+.cal-cell:hover:not(.blank):not(.selected) {
+  background: #f7f2e6;
+  border-color: rgba(111, 140, 107, 0.35);
+}
+
+.cal-cell.today {
+  background: linear-gradient(180deg, #f1ecd9, #e6dfc9);
+  border-color: rgba(150, 130, 90, 0.34);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.cal-cell.today .cal-num { color: var(--ink); font-weight: 600; }
+
+.cal-cell.selected {
+  background: linear-gradient(180deg, #7f9c79, #6a8664);
+  border-color: rgba(64, 84, 58, 0.42);
+  box-shadow: 0 3px 8px rgba(8, 9, 10, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.cal-cell.selected .cal-num { color: #fdfbf5; }
+
+.cal-nav,
+.cal-today-btn {
+  border: 1px solid var(--hairline);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 1px 2px rgba(8, 9, 10, 0.08);
+}
+
+.cal-nav:hover,
+.cal-today-btn:hover { background: #f7f2e6; }
+
+.card {
+  border: 1px solid rgba(64, 56, 42, 0.12);
+  border-left-width: 4px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 1px 1px rgba(8, 9, 10, 0.08), 0 3px 9px rgba(8, 9, 10, 0.10);
+  transition: box-shadow 0.24s ease, transform 0.24s ease;
+}
+
+.card:hover {
+  box-shadow: 0 2px 4px rgba(8, 9, 10, 0.10), 0 10px 22px rgba(8, 9, 10, 0.16);
+  transform: translateY(-1px);
+}
+
+.card-tag {
+  border-radius: 6px;
+  padding: 1px 8px;
+  font-weight: 500;
+}
+
+.list-tabs {
+  border: 1px solid var(--hairline);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.55);
+  box-shadow: inset 0 1px 2px rgba(62, 52, 36, 0.04);
+}
+
+.list-tab { background: transparent; font-weight: 500; color: rgba(43, 42, 38, 0.7); }
+.list-tab + .list-tab { border-left: 1px solid var(--hairline); }
+.list-tab:hover { background: rgba(111, 140, 107, 0.08); }
+
+.list-tab.active {
+  color: var(--ink);
+  font-weight: 600;
+  background: linear-gradient(180deg, #fffdf8, #f0eadb);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 2px rgba(62, 52, 36, 0.08);
+}
+
+.link-btn { color: var(--accent); text-decoration-color: rgba(111, 140, 107, 0.45); }
+.link-btn:hover { color: #55704f; }
+
+.ai-panel {
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+}
+
+.ai-state.on { color: var(--accent); }
+
+.error { color: #a9714f; }
+.error.ok { color: var(--accent); }
+
+/* 弹窗 / 提示条 */
+.dialog {
+  border: 1px solid var(--hairline);
+  border-radius: 18px;
+  background: linear-gradient(180deg, #fffdf8, #f7f2e8);
+  box-shadow: var(--shadow-3), var(--shadow-4), var(--rim);
+}
+
+.overlay {
+  background: rgba(8, 9, 10, 0.45);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.undo-bar,
+.reminder-bar,
+.day-chip {
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  box-shadow: var(--shadow-2), var(--shadow-3);
+}
+
+.reminder-bar { background: linear-gradient(180deg, #fff7e6, #fbeccd); }
+.undo-bar { background: linear-gradient(180deg, #f6f1e5, #efe8d6); }
+
+/* 分隔条：一根细的暖色线，拖起来还是原来的逻辑 */
+.splitter::after,
+.splitter { background: transparent; }
+.splitter::after {
+  content: "";
+  display: block;
+  width: 2px;
+  height: 100%;
+  margin: 0 auto;
+  border-radius: 2px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.30), rgba(255, 255, 255, 0.14));
+}
+
+/* ---------- ⑧ 动效 ---------- */
+
+@keyframes ah-rise {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes ah-card-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes ah-cell-pop {
+  0%   { transform: scale(0.94); }
+  62%  { transform: scale(1.035); }
+  100% { transform: scale(1); }
+}
+
+@keyframes ah-dot-breathe {
+  0%, 100% { box-shadow: 0 1px 2px rgba(40, 55, 36, 0.35), 0 0 0 0 rgba(111, 140, 107, 0.34); }
+  55%      { box-shadow: 0 1px 2px rgba(40, 55, 36, 0.35), 0 0 0 6px rgba(111, 140, 107, 0); }
+}
+
+@keyframes ah-ripple {
+  from { opacity: 0.85; transform: scale(0.45); }
+  to   { opacity: 0;    transform: scale(17); }
+}
+
+/* 进页面时：顶栏和四块面板依次浮起，不是“啪”地全出现 */
+.topbar { animation: ah-rise 0.6s cubic-bezier(0.22, 0.9, 0.24, 1) backwards; }
+.col:first-of-type > .panel:nth-of-type(1) { animation: ah-rise 0.62s 0.06s cubic-bezier(0.22, 0.9, 0.24, 1) backwards; }
+.col:first-of-type > .panel:nth-of-type(2) { animation: ah-rise 0.62s 0.14s cubic-bezier(0.22, 0.9, 0.24, 1) backwards; }
+.col:first-of-type > .panel:nth-of-type(3) { animation: ah-rise 0.62s 0.22s cubic-bezier(0.22, 0.9, 0.24, 1) backwards; }
+.col:last-of-type > .panel:nth-of-type(1) { animation: ah-rise 0.62s 0.10s cubic-bezier(0.22, 0.9, 0.24, 1) backwards; }
+
+/* 顶栏那个小方块：慢慢呼吸 */
+.topbar h1::before { animation: ah-dot-breathe 3.8s ease-in-out infinite; }
+
+/* 面板：指针经过时只压深阴影，不整体位移（面积太大，晃起来会晕） */
+.panel { transition: box-shadow 0.35s ease, border-color 0.35s ease; }
+
+.panel:hover {
+  border-color: rgba(255, 255, 255, 0.55);
+  box-shadow:
+    var(--shadow-1),
+    var(--shadow-2),
+    var(--shadow-3),
+    var(--shadow-4),
+    var(--rim),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+}
+
+/* 列表卡片：新出现的轻轻落下来；悬停抬 1px */
+#list .card:not(.leaving):not(.flash) {
+  animation: ah-card-in 0.26s cubic-bezier(0.22, 0.9, 0.24, 1) backwards;
+}
+
+.cal-cell:not(.blank) { transition: transform 0.16s ease, background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease; }
+.cal-cell:not(.blank):hover { transform: translateY(-1px) scale(1.02); }
+.cal-cell.selected { animation: ah-cell-pop 0.34s cubic-bezier(0.22, 0.9, 0.24, 1); }
+
+.list-tab { transition: background 0.22s ease, color 0.22s ease, transform 0.16s ease; }
+.list-tab:active { transform: scale(0.985); }
+
+.today-row { transition: background-color 0.18s ease, transform 0.18s ease; }
+.today-row:hover { transform: translateX(2px); }
+
+/* 点空白处的一圈涟漪（在背景之上、面板之下） */
+.desk-ripple {
+  position: fixed;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  border-radius: 50%;
+  z-index: -1;
+  pointer-events: none;
+  border: 1px solid rgba(190, 220, 195, 0.45);
+  background: radial-gradient(circle, rgba(170, 210, 180, 0.10), rgba(170, 210, 180, 0) 70%);
+  animation: ah-ripple 0.95s cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
+}
+
+/* ---------- ⑨ 响应式 ---------- */
+
+@media (max-width: 1100px) {
+  .wrap {
+    max-width: calc(100vw - 32px);
+    padding-top: 14px;
+  }
+  .topbar {
+    max-width: calc(100vw - 32px);
+    margin-top: 14px;
+  }
+}
+
+@media (max-width: 900px) {
+  /* 窄窗口：面板按「日历 → 今天·明天 → 记一条 → 列表」排，
+     不因为换了栏目顺序而把录入框挤到最后 */
+  .wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .col { display: contents; }
+  .splitter { display: none; }
+
+  .col > .panel,
+  .col:first-of-type .panel:nth-of-type(1),
+  .col:first-of-type .panel:nth-of-type(2),
+  .col:first-of-type .panel:nth-of-type(3),
+  .col:last-of-type .panel:nth-of-type(1),
+  .col:last-of-type .panel:nth-of-type(2) {
+    margin: 0 !important;
+    position: static;
+  }
+
+  .col:first-of-type > .panel:nth-of-type(1) { order: 1; }
+  #today-panel { order: 2; }
+  #form-panel { order: 3; }
+  #list-panel { order: 4; }
+}
+
+@media (max-width: 560px) {
+  .topbar { padding: 10px 14px; border-radius: 14px; }
+  .topbar h1 { font-size: 13px; letter-spacing: 0.10em; }
+  .stats { font-size: 11px; }
+  .wrap { max-width: calc(100vw - 20px); }
+}
+
+/* 系统开了「减少动态效果」就把这些全停掉 */
+@media (prefers-reduced-motion: reduce) {
+  #desk-bg iframe { transition: none; }
+  .topbar,
+  .col:first-of-type > .panel,
+  .col:last-of-type > .panel,
+  #list .card,
+  .cal-cell.selected,
+  .topbar h1::before,
+  .desk-ripple { animation: none !important; }
+  .cal-cell:not(.blank):hover,
+  .today-row:hover { transform: none; }
+}

@@ -10,3 +10,5 @@
 Thumbs.db
 desktop.ini
 .DS_Store
+# 启动器备份（含旧的快捷方式，不入库）
+activity-backup/
