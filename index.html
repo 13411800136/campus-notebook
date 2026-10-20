@@ -144,6 +144,15 @@
             <input id="ai-key" type="password" placeholder="sk-..." autocomplete="off">
           </div>
 
+          <div class="field">
+            <label for="ai-confirm">识别出活动之后</label>
+            <select id="ai-confirm">
+              <option value="auto">直接记进列表（AI 自己决定）</option>
+              <option value="confirm">先让我确认（可单条点，也可批量同意）</option>
+            </select>
+            <p class="hint">选「先让我确认」时，识别出的活动会先挂在对话气泡上，点「记下」或「全部同意」才写进列表。</p>
+          </div>
+
           <div class="form-actions">
             <button type="button" class="btn-primary" id="btn-ai-save">保存</button>
             <button type="button" class="btn-ghost" id="btn-ai-clear">清除</button>

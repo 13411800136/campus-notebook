@@ -1,4 +1,4 @@
-﻿/* =========================================================
+/* =========================================================
    活动小本本 · 交互背景皮肤（Rhine Lab 桌面）
    ---------------------------------------------------------
    只做两件事：
@@ -274,7 +274,104 @@ body {
   box-shadow: inset 0 1px 2px rgba(62, 52, 36, 0.04);
 }
 
-/* ---------- ⑦ 按钮 / 标签 / 日历 ---------- */
+/* ---------- ⑦ 人工确认：一条条点头 / 批量同意 ---------- */
+
+#ai-confirm {
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: #fffefb;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  box-shadow: inset 0 1px 2px rgba(62, 52, 36, 0.04);
+}
+
+#ai-confirm:focus {
+  outline: none;
+  border-color: rgba(111, 140, 107, 0.55);
+  box-shadow: 0 0 0 3px rgba(111, 140, 107, 0.14);
+}
+
+.chat-confirm {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--hairline);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.confirm-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 9px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(64, 56, 42, 0.10);
+}
+
+.confirm-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.confirm-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.confirm-meta {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.confirm-state {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--accent);
+}
+
+.confirm-state-skip {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.confirm-one {
+  flex: 0 0 auto;
+  padding: 4px 12px;
+  font-size: 12px;
+  border-radius: 9px;
+}
+
+.confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.confirm-actions .btn-primary,
+.confirm-actions .btn-ghost {
+  padding: 5px 12px;
+  font-size: 12px;
+  border-radius: 9px;
+}
+
+/* ---------- ⑧ 按钮 / 标签 / 日历 ---------- */
 
 .btn-primary,
 .btn-ghost,

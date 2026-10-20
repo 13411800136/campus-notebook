@@ -1140,6 +1140,8 @@ function guessTag(text) {
 const AI_BASE_KEY = 'campus_ai_base_v1';
 const AI_MODEL_KEY = 'campus_ai_model_v1';
 const AI_KEY_KEY = 'campus_ai_key_v1';
+// 识别出活动之后怎么办：'auto' = AI 自己决定直接入库；'confirm' = 先挂在气泡上等人工确认
+const AI_CONFIRM_KEY = 'campus_ai_confirm_v1';
 
 // 默认指向 DeepSeek；用户可以在设置里改成任何「OpenAI 兼容」的接口
 const AI_DEFAULT_BASE = 'https://api.deepseek.com/chat/completions';
@@ -1156,11 +1158,17 @@ function loadAiConfig() {
     return {
       base: localStorage.getItem(AI_BASE_KEY) || '',
       model: localStorage.getItem(AI_MODEL_KEY) || '',
-      key: localStorage.getItem(AI_KEY_KEY) || ''
+      key: localStorage.getItem(AI_KEY_KEY) || '',
+      confirm: localStorage.getItem(AI_CONFIRM_KEY) === 'confirm' ? 'confirm' : 'auto'
     };
   } catch (err) {
-    return { base: '', model: '', key: '' };
+    return { base: '', model: '', key: '', confirm: 'auto' };
   }
+}
+
+/** 是不是「先让我确认」模式 */
+function aiNeedsConfirm() {
+  return loadAiConfig().confirm === 'confirm';
 }
 
 /** 三项都填了才算配好；没配好就走规则识别 */
@@ -1384,7 +1392,8 @@ function initAiSettings() {
   function refreshState() {
     const c = loadAiConfig();
     if (c.base && c.model && c.key) {
-      state.textContent = '当前：AI 对话（' + c.model + '）';
+      state.textContent = '当前：AI 对话（' + c.model + '）' +
+        (c.confirm === 'confirm' ? ' · 先确认' : '');
       state.classList.add('on');
     } else {
       state.textContent = '当前：规则识别';
@@ -1397,11 +1406,27 @@ function initAiSettings() {
   document.getElementById('ai-base').value = c0.base || AI_DEFAULT_BASE;
   document.getElementById('ai-model').value = c0.model || AI_DEFAULT_MODEL;
   document.getElementById('ai-key').value = c0.key;
+  const confirmBox = document.getElementById('ai-confirm');
+  if (confirmBox) confirmBox.value = c0.confirm;
   refreshState();
 
   document.getElementById('btn-ai-toggle').addEventListener('click', () => {
     panel.hidden = !panel.hidden;
   });
+
+  // 改「识别出活动之后」的处理方式：立即生效，不用点保存
+  if (confirmBox) {
+    confirmBox.addEventListener('change', () => {
+      try {
+        localStorage.setItem(AI_CONFIRM_KEY, confirmBox.value === 'confirm' ? 'confirm' : 'auto');
+      } catch (err) { /* 存不进去就只影响这次 */ }
+      refreshState();
+      msg.classList.remove('ok');
+      msg.textContent = confirmBox.value === 'confirm'
+        ? '以后识别出的活动会先挂在对话里，你点「记下」或「全部同意」才进列表。'
+        : '以后识别出的活动会直接记进列表，不用你确认。';
+    });
+  }
 
   document.getElementById('btn-ai-save').addEventListener('click', () => {
     const base = document.getElementById('ai-base').value.trim();
@@ -1420,6 +1445,9 @@ function initAiSettings() {
       localStorage.setItem(AI_BASE_KEY, base);
       localStorage.setItem(AI_MODEL_KEY, model);
       localStorage.setItem(AI_KEY_KEY, key);
+      if (confirmBox) {
+        localStorage.setItem(AI_CONFIRM_KEY, confirmBox.value === 'confirm' ? 'confirm' : 'auto');
+      }
     } catch (err) {
       msg.textContent = '这台浏览器的本地存储不可用，存不进去。';
       return;
@@ -1440,6 +1468,7 @@ function initAiSettings() {
     document.getElementById('ai-base').value = '';
     document.getElementById('ai-model').value = '';
     document.getElementById('ai-key').value = '';
+    if (confirmBox) confirmBox.value = 'auto';
     refreshState();
     msg.classList.add('ok');
     msg.textContent = '已清除，回到规则识别。';
@@ -1564,6 +1593,95 @@ function renderChat() {
         return;               // 已经存了，就别再给「填入表单」
       }
 
+      // 确认模式：挂在气泡上等人工点头
+      if (Array.isArray(msg.pending) && msg.pending.length) {
+        const box = document.createElement('div');
+        box.className = 'chat-confirm';
+
+        const savedItems = Array.isArray(msg.savedItems) ? msg.savedItems : [];
+        const decisions = Array.isArray(msg.decisions) ? msg.decisions : [];
+        const pendingLeft = msg.pending.filter((_, i) => !decisions[i]).length;
+
+        msg.pending.forEach((a, i) => {
+          const rowEl = document.createElement('div');
+          rowEl.className = 'confirm-row';
+
+          const main = document.createElement('div');
+          main.className = 'confirm-main';
+
+          const title = document.createElement('span');
+          title.className = 'confirm-title';
+          title.textContent = a.title;
+
+          const meta = document.createElement('span');
+          meta.className = 'confirm-meta';
+          const when = a.startTime ? a.startTime + (a.endTime ? '–' + a.endTime : '') : '全天';
+          meta.textContent = [formatDateCN(a.date), when, a.tag ? '#' + a.tag : '']
+            .filter(Boolean).join(' · ');
+
+          main.appendChild(title);
+          main.appendChild(meta);
+          rowEl.appendChild(main);
+
+          const state = decisions[i];
+          if (state === 'saved') {
+            const done = document.createElement('span');
+            done.className = 'confirm-state';
+            done.textContent = '✓ 已记';
+            rowEl.appendChild(done);
+          } else if (state === 'skipped') {
+            const skipped = document.createElement('span');
+            skipped.className = 'confirm-state confirm-state-skip';
+            skipped.textContent = '已跳过';
+            rowEl.appendChild(skipped);
+          } else {
+            const ok = document.createElement('button');
+            ok.type = 'button';
+            ok.className = 'btn-primary confirm-one';
+            ok.textContent = '记下';
+            ok.addEventListener('click', () => confirmOne(msg, i));
+            rowEl.appendChild(ok);
+          }
+
+          box.appendChild(rowEl);
+        });
+
+        const actions = document.createElement('div');
+        actions.className = 'confirm-actions';
+
+        if (pendingLeft > 0) {
+          const all = document.createElement('button');
+          all.type = 'button';
+          all.className = 'btn-primary';
+          all.textContent = '全部同意（' + pendingLeft + ' 条）';
+          all.addEventListener('click', () => confirmAllPending(msg));
+          actions.appendChild(all);
+
+          const none = document.createElement('button');
+          none.type = 'button';
+          none.className = 'btn-ghost';
+          none.textContent = '都不要';
+          none.addEventListener('click', () => skipAllPending(msg));
+          actions.appendChild(none);
+        }
+
+        if (savedItems.length) {
+          const undo = document.createElement('button');
+          undo.type = 'button';
+          undo.className = 'btn-ghost chat-undo';
+          undo.textContent = '撤销已记的 ' + savedItems.length + ' 条';
+          undo.addEventListener('click', () => undoPendingSave(msg));
+          actions.appendChild(undo);
+        }
+
+        if (actions.childNodes.length) box.appendChild(actions);
+        bubble.appendChild(box);
+
+        row.appendChild(bubble);
+        log.appendChild(row);
+        return;
+      }
+
       // 还没存（信息不全，或者刚撤销过）：给个手动填表的出口
       const fill = document.createElement('button');
       fill.type = 'button';
@@ -1638,26 +1756,19 @@ async function askAI(text, imageDataUrl, label) {
       }
 
       if (got) {
-        // 一次可能识别出好几条，全部写进列表，用户不用点任何按钮。
-        // activities 是标准形态，单个 activity 也兼容（老模型/别的调用方）。
+        // 一次可能识别出好几条。自动模式直接入库；确认模式先挂在气泡上等人工点头。
         const rawActs = Array.isArray(got.activities)
           ? got.activities
           : (got.activity ? [got.activity] : []);
         const acts = got.action !== 'none' ? rawActs : [];
-        const saved = acts.length ? saveBatch(acts, got.action) : null;
 
         dropPending(thinking);
-        pushChat({
-          role: 'ai',
+        deliverParsed(acts, {
           text: got.reply || (acts.length ? '记下了。' : '我在。'),
-          parsed: acts[0] || null,
-          parsedList: acts,
-          saved: saved,
           source: imageDataUrl ? 'AI 识图' : 'AI 识别',
-          sourceText: text || ''
+          sourceText: text || '',
+          action: got.action
         });
-        if (saved) renderAll();     // 日历、列表、计数立刻跟着变
-        renderChat();
         return;
       }
 
@@ -1674,18 +1785,13 @@ async function askAI(text, imageDataUrl, label) {
       }
 
       const parsed = parseActivityText(text);
-      const saved = autoSaveActivity(parsed, 'new');
       dropPending(thinking);
-      pushChat({
-        role: 'ai',
+      deliverParsed(parsed ? [parsed] : [], {
         text: '刚才没连上 AI（' + failReason + '），我先用本机规则看了看：',
-        parsed: parsed,
-        saved: saved,
         source: '规则识别（AI 调用失败）',
-        sourceText: text
+        sourceText: text,
+        action: 'new'
       });
-      if (saved) renderAll();
-      renderChat();
       return;
     }
 
@@ -1701,20 +1807,18 @@ async function askAI(text, imageDataUrl, label) {
     }
 
     const parsed = parseActivityText(text);
-    const saved = autoSaveActivity(parsed, 'new');
+    const willConfirm = aiNeedsConfirm();
     dropPending(thinking);
-    pushChat({
-      role: 'ai',
-      text: saved
-        ? '我先用本机规则记下了。想让我真的会聊天，在下面填个 API Key。'
+    deliverParsed(parsed ? [parsed] : [], {
+      text: parsed
+        ? (willConfirm
+            ? '我先用本机规则认出了这条，点「记下」再写进列表。想让我真的会聊天，在下面填个 API Key。'
+            : '我先用本机规则记下了。想让我真的会聊天，在下面填个 API Key。')
         : '我没读出日期，先不写进列表——你说个时间，比如「10月25日下午三点」。\n（想让我真的能聊天，得在下面「AI 识别设置」里填一个 API Key。）',
-      parsed: parsed,
-      saved: saved,
       source: '规则识别（没配 AI，用的是本机规则）',
-      sourceText: text
+      sourceText: text,
+      action: 'new'
     });
-    if (saved) renderAll();
-    renderChat();
   } finally {
     setChatBusy(false);
   }
@@ -2030,19 +2134,98 @@ function saveBatch(list, action) {
   return { kind: 'batch', items: items };
 }
 
-/** 自动记错了？一键撤回（一条或一整批） */
-function undoChatSave(msg) {
-  const s = msg && msg.saved;
-  if (!s) return;
+/**
+ * 识别结果的统一出口。
+ * - 自动模式（默认）：立刻写进列表，用户不用动手；
+ * - 确认模式：先挂在气泡上，等用户点「记下」「全部同意」才入库。
+ */
+function deliverParsed(list, opts) {
+  opts = opts || {};
+  const acts = (list || []).filter(Boolean);
 
-  const items = Array.isArray(s.items)
-    ? s.items
-    : (s.kind === 'created' || s.kind === 'updated' ? [s] : []);
-  if (!items.length) return;
+  const msg = {
+    role: 'ai',
+    text: opts.text || (acts.length ? '记下了。' : '我在。'),
+    parsed: acts[0] || null,
+    parsedList: acts,
+    source: opts.source || '',
+    sourceText: opts.sourceText || ''
+  };
 
+  if (acts.length) {
+    if (aiNeedsConfirm()) {
+      msg.pending = acts;
+      msg.decisions = acts.map(() => null);   // null=待定 / 'saved' / 'skipped'
+      msg.savedItems = [];
+      msg.confirmAction = opts.action === 'edit' ? 'edit' : 'new';
+    } else {
+      msg.saved = saveBatch(acts, opts.action || 'new');
+    }
+  }
+
+  pushChat(msg);
+  if (msg.saved) renderAll();     // 日历、列表、计数立刻跟着变
+  renderChat();
+  return msg;
+}
+
+/** 确认模式下：点某一行的「记下」 */
+function confirmOne(msg, i) {
+  if (!msg || !Array.isArray(msg.pending)) return;
+  if (msg.decisions[i]) return;             // 已经决定过了
+
+  const action = msg.confirmAction === 'edit' && i === 0 ? 'edit' : 'new';
+  const item = autoSaveActivity(msg.pending[i], action);
+  if (item) {
+    msg.savedItems = msg.savedItems || [];
+    msg.savedItems.push(item);
+    msg.decisions[i] = 'saved';
+  } else {
+    msg.decisions[i] = 'skipped';
+  }
+
+  if (msg.savedItems && msg.savedItems.length) renderAll();
+  renderChat();
+}
+
+/** 确认模式下：批量同意（剩下没决定的全部入库） */
+function confirmAllPending(msg) {
+  if (!msg || !Array.isArray(msg.pending)) return;
+
+  let added = 0;
+  msg.pending.forEach((a, i) => {
+    if (msg.decisions[i]) return;
+    const action = msg.confirmAction === 'edit' && i === 0 ? 'edit' : 'new';
+    const item = autoSaveActivity(a, action);
+    if (item) {
+      msg.savedItems = msg.savedItems || [];
+      msg.savedItems.push(item);
+      msg.decisions[i] = 'saved';
+      added++;
+    } else {
+      msg.decisions[i] = 'skipped';
+    }
+  });
+
+  if (added) renderAll();
+  renderChat();
+}
+
+/** 确认模式下：都不要 */
+function skipAllPending(msg) {
+  if (!msg || !Array.isArray(msg.pending)) return;
+  msg.decisions = msg.pending.map(() => 'skipped');
+  renderChat();
+}
+
+/**
+ * 撤掉一批已经写进去的记录（确认模式和自动模式共用）。
+ * 返回是否真的动过数据。
+ */
+function undoSavedItems(items) {
   let touched = false;
 
-  items.forEach(it => {
+  (items || []).forEach(it => {
     if (!it) return;
 
     if (it.kind === 'created') {
@@ -2067,7 +2250,34 @@ function undoChatSave(msg) {
     if (chatContext.eventId === it.id) chatContext.eventId = null;
   });
 
-  if (!touched) return;
+  return touched;
+}
+
+/** 确认模式下的「撤销」：把已入库的那几条撤掉，并让它们回到待确认 */
+function undoPendingSave(msg) {
+  if (!msg || !Array.isArray(msg.savedItems) || !msg.savedItems.length) return;
+  if (!undoSavedItems(msg.savedItems)) return;
+
+  lastSavedId = null;
+  msg.savedItems = [];
+  msg.decisions = (msg.pending || []).map(() => null);
+
+  saveEvents();
+  renderAll();
+  renderChat();
+}
+
+/** 自动记错了？一键撤回（一条或一整批） */
+function undoChatSave(msg) {
+  const s = msg && msg.saved;
+  if (!s) return;
+
+  const items = Array.isArray(s.items)
+    ? s.items
+    : (s.kind === 'created' || s.kind === 'updated' ? [s] : []);
+  if (!items.length) return;
+
+  if (!undoSavedItems(items)) return;
 
   lastSavedId = null;
 
