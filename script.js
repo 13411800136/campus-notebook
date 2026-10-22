@@ -1204,27 +1204,32 @@ async function aiChat(text, imageDataUrl, history) {
   const today = todayStr();
   const weekday = '日一二三四五六'[new Date(today + 'T00:00:00').getDay()];
 
-  // 把用户的待办摘要带进上下文，它才答得上「我今天有什么」「这周还有几件事」。
-  // 只发名称/日期/时间/类别，**不发备注** —— 备注里可能是群消息原文，没必要送出去。
-  const upcoming = events
-    .filter(e => statusOf(e) !== 'done' && daysFromToday(e.date) >= 0)
+  // 把用户的清单带进上下文，它才答得上「我今天有什么」，也才知道要动的是哪几条。
+  // 只发名称/日期/时间/类别/状态，**不发备注** —— 备注里可能是群消息原文，没必要送出去。
+  // 给模型看的编号清单：行首 #N 就是它这一轮能动的那几条
+  const index = [];
+  const listLines = events
+    .slice()
     .sort((a, b) => a.date.localeCompare(b.date) || String(a.startTime || '').localeCompare(String(b.startTime || '')))
-    .slice(0, 20)
-    .map(e => `${e.date} ${e.startTime || '全天'} ${e.title} #${e.tag}`)
-    .join('\n');
+    .slice(0, 30)
+    .map((e, i) => {
+      index.push(e.id);
+      return '#'.concat(String(i + 1), ' ', e.date, ' ', e.startTime || '全天', ' ', e.title,
+        ' #', e.tag, ' [', STATUS_LABEL[statusOf(e)], ']');
+    });
 
   const system = [
     '你是「活动小本本」里的助手。用这个网页的是个大学生，正在把散在各处的校园活动记下来。',
     '今天是 ' + today + '（星期' + weekday + '）。可选的类别只有：' + tags.join('、') + '。',
     '',
-    '用户现在记着的待办（最多列 20 条）：',
-    upcoming || '（一条都没有）',
+    '用户现在的活动清单（行首 #N 是编号，改动已有记录时用它，最多 30 条）：',
+    listLines.join('\n') || '（一条都没有）',
     '',
     '说话方式：',
     '- 像同学之间聊天，简短、口语，一次不超过 60 字。不要客套，不要「作为AI」这类话。',
-    '- 用户可能只是在闲聊、在问问题，也可能在说一个或好几件事。正常回应就行。',
-    '- 用户没在说活动、或者在问你问题的时候，activities 给空数组、action 给 "none"。',
-    '- 用户问「我今天有什么」「这周还有几件事」这类问题时，照上面那份待办清单回答，清单里没有就说没有，绝不编。',
+    '- 用户可能只是在闲聊、在问问题，也可能让你记事、改事、删事。正常回应就行。',
+    '- 用户没在说活动、也没让你动手的时候，activities 和 ops 都给空数组、action 给 "none"。',
+    '- 用户问「我今天有什么」「这周还有几件事」这类问题时，照上面那份清单回答，清单里没有就说没有，绝不编。',
     '- 日期统一写成 YYYY-MM-DD。拿不准的字段一律给空字符串，绝不编造。没说年份按今年算；说了「明年」就按明年。',
     '',
     '一次可以交代好几件事：',
@@ -1234,18 +1239,32 @@ async function aiChat(text, imageDataUrl, history) {
     '',
     'activities 和 action 怎么给：',
     '- action 只有三种：',
-    '  "new"  = 这些是**新**活动，之前没记过 → 程序会立刻把它们全写进列表，用户不用动手',
-    '  "edit" = 用户在**改**我上一轮刚给的那条（「改成周四」「地点不用记」「不是讲座是比赛」）→ 程序只更新那一条，activities 里只给这一条',
-    '  "none" = 没有成形的活动，或者信息还不够（缺名称或缺日期）→ 什么都不会写，activities 给空数组',
+    '  "new"  = 这些是**新**活动，之前没记过 → 程序会把它们写进列表',
+    '  "edit" = 用户在**改**我上一轮刚给的那条（「改成周四」「地点不用记」「不是讲座是比赛」）→ activities 里只给这一条',
+    '  "none" = 没有成形的活动，或者信息还不够（缺名称或缺日期）→ activities 给空数组',
     '- action 是 "new" 时，activities 里每一条的 title 和 date **都必须有值**；哪一条缺就丢掉那一条，不要留半条。',
     '- 用户又提到一件**不同**的事，即使和上一件很像，也算新的一条。',
-    '- 你不确定是不是在改上一条时，用 "new"，把话说清楚让用户自己看列表。',
     '- reply 用一句话说清你记了几条（例如「记了 3 条：讲座、辩论赛、交材料」），不要逐条重复细节。',
     '',
+    '对已有记录动手（ops）：',
+    '- 只能引用上面清单里出现过的编号，不要编号码里没有的；不确定是哪一条就别动。',
+    '- 四种操作：',
+    '  {"op":"complete","ids":[1,2]}   标成已完成（可以一次好几条）',
+    '  {"op":"reopen","ids":[3]}       改回未开始',
+    '  {"op":"delete","ids":[4]}       删掉（会进「已删除」，能恢复；程序会先让用户点确认）',
+    '  {"op":"update","id":5,"activity":{"title":"...","date":"YYYY-MM-DD","startTime":"HH:MM","endTime":"HH:MM","tag":"类别名"}}  改某一条已存在的（只给要改的字段，用 {} 里的字段覆盖）',
+    '- 例子：「把上周的都标成完成」→ 找到那几条的编号，一次给 complete；「删掉辩论赛」→ 找到它的编号给 delete；「把已完成那条改到周五」→ update。',
+    '- 一次可以同时给 activities（新活动）和 ops（对旧的动手），但两件事别搞混。',
+    '- 你要先说清打算动哪几条（在 thinking 里写），不要偷偷改。',
+    '',
+    'thinking 字段：',
+    '- 用一两句话写你的判断（例如「清单里 10/19、10/20 两条还没完成，按你说的标完成」），用户会在气泡里看到，折叠起来。',
+    '- 不要写思考过程的长篇大论，只写结论和依据。',
+    '',
     '只输出一个 JSON 对象，不要 Markdown 代码块，不要多余的解释。格式：',
-    '{"reply":"给用户看的一句话","activities":[],"action":"none"}',
+    '{"reply":"给用户看的一句话","thinking":"你的判断","activities":[],"ops":[],"action":"none"}',
     '或者',
-    '{"reply":"...","activities":[{"title":"...","date":"YYYY-MM-DD","startTime":"HH:MM","endTime":"HH:MM","tag":"类别名"}],"action":"new"}'
+    '{"reply":"...","thinking":"...","activities":[{"title":"...","date":"YYYY-MM-DD","startTime":"HH:MM","endTime":"HH:MM","tag":"类别名"}],"ops":[{"op":"complete","ids":[1,3]}],"action":"new"}'
   ].join('\n');
 
   const messages = [{ role: 'system', content: system }];
@@ -1301,6 +1320,8 @@ async function aiChat(text, imageDataUrl, history) {
   const data = await res.json();
   const choice = data && data.choices && data.choices[0];
   const content = choice && choice.message && choice.message.content;
+  // 推理模型（deepseek 系）会把内部推理单独放在 reasoning_content 里
+  const reasoning = choice && choice.message && choice.message.reasoning_content;
 
   if (!content) {
     // 推理模型常见的坑：额度被内部推理吃光，正文是空的
@@ -1310,15 +1331,21 @@ async function aiChat(text, imageDataUrl, history) {
     throw new Error('返回内容为空');
   }
 
-  return parseAiReply(content, text);
+  const parsed = parseAiReply(content, text, index);
+  if (!parsed.thinking && reasoning) {
+    parsed.thinking = String(reasoning).trim().slice(0, 500);
+  }
+  return parsed;
 }
 
 /**
- * 把模型返回的东西解析成 { reply, activity }。
+ * 把模型返回的东西解析成 { reply, thinking, activity, activities, ops, action }。
  * 模型不一定完全听话：可能包一层 ```json、也可能干脆说人话。
  * 所以解析不出来时，把那整段话当成 reply —— 至少别让用户看到一句「解析失败」。
+ *
+ * index 是本轮清单里 #1..#N 对应的真实事件 id，用来把模型说的编号翻译回去。
  */
-function parseAiReply(content, text) {
+function parseAiReply(content, text, index) {
   let raw = String(content).trim();
   raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
 
@@ -1329,7 +1356,7 @@ function parseAiReply(content, text) {
   }
 
   if (!got || typeof got !== 'object' || Array.isArray(got)) {
-    return { reply: raw.slice(0, 300), activity: null, activities: [], action: 'none' };
+    return { reply: raw.slice(0, 300), thinking: '', activity: null, activities: [], ops: [], action: 'none' };
   }
 
   // 一次可能说好几件事：activities 数组优先；老的单个 activity 也认。
@@ -1353,10 +1380,50 @@ function parseAiReply(content, text) {
   // 「改」只针对上一轮那一条，多给了也只取第一条
   const list = got.action === 'edit' ? activities.slice(0, 1) : activities;
 
+  // 对已有记录的操作：把模型说的 #编号 翻成真实事件 id
+  const ops = [];
+  const idOf = (n) => {
+    const i = Number(n);
+    return Number.isInteger(i) && i >= 1 && i <= (index || []).length ? index[i - 1] : null;
+  };
+
+  (Array.isArray(got.ops) ? got.ops : []).slice(0, 10).forEach(op => {
+    if (!op || typeof op !== 'object') return;
+    const kind = String(op.op || '');
+
+    if (kind === 'update') {
+      const evId = idOf(op.id);
+      if (!evId) return;
+      // 只认模型真的给了的字段，不让规则识别去「猜」——改错一条比不改更糟
+      const raw = (op.activity && typeof op.activity === 'object') ? op.activity : null;
+      if (!raw) return;
+
+      const patch = {};
+      if (typeof raw.title === 'string' && raw.title.trim()) patch.title = raw.title.trim().slice(0, 50);
+      if (isValidDateStr(raw.date)) patch.date = String(raw.date).trim();
+      if (/^\d{2}:\d{2}$/.test(String(raw.startTime || ''))) patch.startTime = String(raw.startTime).trim();
+      if (/^\d{2}:\d{2}$/.test(String(raw.endTime || ''))) patch.endTime = String(raw.endTime).trim();
+      if (typeof raw.tag === 'string' && tags.indexOf(raw.tag) !== -1) patch.tag = raw.tag;
+
+      if (!Object.keys(patch).length) return;
+      ops.push({ kind: 'update', evId: evId, patch: patch });
+      return;
+    }
+
+    if (kind !== 'complete' && kind !== 'reopen' && kind !== 'delete') return;
+
+    const ids = Array.isArray(op.ids) ? op.ids : (op.id != null ? [op.id] : []);
+    const evIds = ids.map(idOf).filter(Boolean);
+    if (!evIds.length) return;
+    ops.push({ kind: kind, evIds: evIds });
+  });
+
   return {
     reply: typeof got.reply === 'string' ? got.reply.trim().slice(0, 300) : '',
+    thinking: typeof got.thinking === 'string' ? got.thinking.trim().slice(0, 300) : '',
     activity: list[0] || null,
     activities: list,
+    ops: ops,
     action: list.length ? (got.action === 'edit' ? 'edit' : 'new') : 'none'
   };
 }
@@ -1505,6 +1572,93 @@ function describeParsed(p) {
 }
 
 /** 画出整个对话 */
+/**
+ * 气泡里「对已有记录的操作」那一段：每行一个动作 + 执行/撤销按钮。
+ * 删除是危险操作，所以那一行用红色按钮，而且不会自动执行。
+ */
+function renderOpsBlock(bubble, msg) {
+  const box = document.createElement('div');
+  box.className = 'chat-ops';
+
+  const head = document.createElement('div');
+  head.className = 'ops-head';
+  head.textContent = '对已有记录的操作';
+  box.appendChild(head);
+
+  const states = Array.isArray(msg.opState) ? msg.opState : [];
+
+  (msg.ops || []).forEach((op, i) => {
+    const rowEl = document.createElement('div');
+    rowEl.className = 'op-row';
+
+    const main = document.createElement('div');
+    main.className = 'op-main';
+    const label = document.createElement('span');
+    label.className = 'op-label';
+    label.textContent = describeOp(op);
+    main.appendChild(label);
+    rowEl.appendChild(main);
+
+    const state = states[i];
+    if (state === 'done') {
+      const s = document.createElement('span');
+      s.className = 'confirm-state';
+      s.textContent = op.kind === 'delete' ? '✓ 已删除' : '✓ 已执行';
+      rowEl.appendChild(s);
+
+      const undo = document.createElement('button');
+      undo.type = 'button';
+      undo.className = 'btn-ghost op-undo';
+      undo.textContent = '撤销';
+      undo.addEventListener('click', () => undoOp(msg, i));
+      rowEl.appendChild(undo);
+    } else if (state === 'skipped') {
+      const s = document.createElement('span');
+      s.className = 'confirm-state confirm-state-skip';
+      s.textContent = '已跳过';
+      rowEl.appendChild(s);
+    } else {
+      const run = document.createElement('button');
+      run.type = 'button';
+      run.className = op.kind === 'delete' ? 'btn-danger op-run' : 'btn-primary op-run';
+      run.textContent = op.kind === 'delete' ? '删除' : '执行';
+      run.addEventListener('click', () => {
+        applyOp(msg, i);
+        renderChat();
+      });
+      rowEl.appendChild(run);
+    }
+
+    box.appendChild(rowEl);
+  });
+
+  const actions = document.createElement('div');
+  actions.className = 'confirm-actions';
+
+  const left = (msg.ops || []).filter((_, i) => !states[i]).length;
+  if (left > 0) {
+    const all = document.createElement('button');
+    all.type = 'button';
+    all.className = 'btn-primary';
+    all.textContent = '全部执行（' + left + ' 条）';
+    all.addEventListener('click', () => runPendingOps(msg));
+    actions.appendChild(all);
+  }
+
+  const doneCount = states.filter(s => s === 'done').length;
+  if (doneCount > 0) {
+    const undoAll = document.createElement('button');
+    undoAll.type = 'button';
+    undoAll.className = 'btn-ghost chat-undo';
+    undoAll.textContent = '撤销已执行的 ' + doneCount + ' 条';
+    undoAll.addEventListener('click', () => undoAllOps(msg));
+    actions.appendChild(undoAll);
+  }
+
+  if (actions.childNodes.length) box.appendChild(actions);
+  bubble.appendChild(box);
+}
+
 function renderChat() {
   const log = document.getElementById('chat-log');
   if (!log) return;
@@ -1541,6 +1695,20 @@ function renderChat() {
       p.className = 'chat-text';
       p.textContent = msg.text;
       bubble.appendChild(p);
+    }
+
+    // 它的判断放在回复下面，默认折叠，想看再点开
+    if (msg.thinking) {
+      const think = document.createElement('details');
+      think.className = 'chat-think';
+      const sum = document.createElement('summary');
+      sum.textContent = '思考';
+      const body = document.createElement('div');
+      body.className = 'chat-think-body';
+      body.textContent = msg.thinking;
+      think.appendChild(sum);
+      think.appendChild(body);
+      bubble.appendChild(think);
     }
 
     if (msg.parsed) {
@@ -1588,13 +1756,8 @@ function renderChat() {
           undo.addEventListener('click', () => undoChatSave(msg));
           bubble.appendChild(undo);
         }
-        row.appendChild(bubble);
-        log.appendChild(row);
-        return;               // 已经存了，就别再给「填入表单」
-      }
-
-      // 确认模式：挂在气泡上等人工点头
-      if (Array.isArray(msg.pending) && msg.pending.length) {
+      } else if (Array.isArray(msg.pending) && msg.pending.length) {
+        // 确认模式：挂在气泡上等人工点头
         const box = document.createElement('div');
         box.className = 'chat-confirm';
 
@@ -1676,23 +1839,24 @@ function renderChat() {
 
         if (actions.childNodes.length) box.appendChild(actions);
         bubble.appendChild(box);
-
-        row.appendChild(bubble);
-        log.appendChild(row);
-        return;
+      } else {
+        // 还没存（信息不全，或者刚撤销过）：给个手动填表的出口
+        const fill = document.createElement('button');
+        fill.type = 'button';
+        fill.className = 'btn-primary chat-fill';
+        fill.textContent = '填入表单';
+        fill.addEventListener('click', () => {
+          applyParsedToForm(msg.parsed, msg.sourceText || '');
+          document.getElementById('form-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+          document.getElementById('input-title').focus();
+        });
+        bubble.appendChild(fill);
       }
+    }
 
-      // 还没存（信息不全，或者刚撤销过）：给个手动填表的出口
-      const fill = document.createElement('button');
-      fill.type = 'button';
-      fill.className = 'btn-primary chat-fill';
-      fill.textContent = '填入表单';
-      fill.addEventListener('click', () => {
-        applyParsedToForm(msg.parsed, msg.sourceText || '');
-        document.getElementById('form-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
-        document.getElementById('input-title').focus();
-      });
-      bubble.appendChild(fill);
+    // 对已有记录的操作（完成 / 改回 / 删除 / 修改）
+    if (Array.isArray(msg.ops) && msg.ops.length) {
+      renderOpsBlock(bubble, msg);
     }
 
     row.appendChild(bubble);
@@ -1764,7 +1928,9 @@ async function askAI(text, imageDataUrl, label) {
 
         dropPending(thinking);
         deliverParsed(acts, {
-          text: got.reply || (acts.length ? '记下了。' : '我在。'),
+          text: got.reply || (acts.length ? '记下了。' : (Array.isArray(got.ops) && got.ops.length ? '好。' : '我在。')),
+          thinking: got.thinking || '',
+          ops: got.ops || [],
           source: imageDataUrl ? 'AI 识图' : 'AI 识别',
           sourceText: text || '',
           action: got.action
@@ -2136,16 +2302,19 @@ function saveBatch(list, action) {
 
 /**
  * 识别结果的统一出口。
- * - 自动模式（默认）：立刻写进列表，用户不用动手；
- * - 确认模式：先挂在气泡上，等用户点「记下」「全部同意」才入库。
+ * - 自动模式（默认）：新活动立刻入库，改状态/改字段也立刻做；
+ * - 确认模式：全都先挂在气泡上，等用户点头；
+ * - 删除无论哪种模式都要用户点一下。
  */
 function deliverParsed(list, opts) {
   opts = opts || {};
   const acts = (list || []).filter(Boolean);
+  const ops = Array.isArray(opts.ops) ? opts.ops : [];
 
   const msg = {
     role: 'ai',
-    text: opts.text || (acts.length ? '记下了。' : '我在。'),
+    text: opts.text || (acts.length ? '记下了。' : (ops.length ? '好。' : '我在。')),
+    thinking: opts.thinking || '',
     parsed: acts[0] || null,
     parsedList: acts,
     source: opts.source || '',
@@ -2163,10 +2332,183 @@ function deliverParsed(list, opts) {
     }
   }
 
+  if (ops.length) {
+    msg.ops = ops;
+    msg.opState = ops.map(() => null);        // null=待定 / 'done' / 'skipped'
+    msg.opUndo = ops.map(() => null);
+
+    // 自动模式下能直接做的先做掉；删除永远留给人点
+    if (!aiNeedsConfirm()) {
+      ops.forEach((op, i) => {
+        if (op.kind !== 'delete') applyOp(msg, i);
+      });
+    }
+  }
+
   pushChat(msg);
-  if (msg.saved) renderAll();     // 日历、列表、计数立刻跟着变
+  if (msg.saved || (msg.opState || []).some(s => s === 'done')) renderAll();
   renderChat();
   return msg;
+}
+
+/* ---------- 对已有记录的操作（完成 / 改回 / 删除 / 修改） ---------- */
+
+/** 这一行操作怎么说人话 */
+function describeOp(op) {
+  if (!op) return '';
+  const ids = op.kind === 'update' ? [op.evId] : (op.evIds || []);
+  const names = ids
+    .map(id => {
+      const ev = events.find(e => e.id === id);
+      return ev ? ev.title : '（已不在了）';
+    })
+    .filter(Boolean);
+
+  const what =
+    op.kind === 'complete' ? '标记完成' :
+    op.kind === 'reopen'   ? '改回未开始' :
+    op.kind === 'delete'   ? '删除' :
+                             '修改';
+
+  if (op.kind === 'update' && op.patch) {
+    const bits = [];
+    if (op.patch.date) bits.push(op.patch.date);
+    if (op.patch.startTime) bits.push(op.patch.startTime + (op.patch.endTime ? '–' + op.patch.endTime : ''));
+    if (op.patch.title) bits.push('「' + op.patch.title + '」');
+    if (op.patch.tag) bits.push('#' + op.patch.tag);
+    return what + '：' + names.join('、') + (bits.length ? ' → ' + bits.join(' ') : '');
+  }
+
+  return what + '：' + names.join('、');
+}
+
+/**
+ * 真正执行第 i 条操作，并把「怎么撤回去」记下来。
+ * 返回是否动了数据。
+ */
+function applyOp(msg, i) {
+  const op = msg && msg.ops && msg.ops[i];
+  if (!op) return false;
+  if (msg.opState && msg.opState[i]) return false;   // 已经决定过了
+
+  const markSkipped = () => {
+    msg.opState[i] = 'skipped';
+    return false;
+  };
+
+  if (op.kind === 'complete' || op.kind === 'reopen') {
+    const before = [];
+    (op.evIds || []).forEach(id => {
+      const ev = events.find(e => e.id === id);
+      if (!ev) return;
+      before.push({ id: ev.id, status: statusOf(ev) });
+      ev.status = op.kind === 'complete' ? 'done' : 'todo';
+    });
+    if (!before.length) return markSkipped();
+    msg.opUndo[i] = { kind: 'status', items: before };
+  } else if (op.kind === 'delete') {
+    const before = [];
+    (op.evIds || []).forEach(id => {
+      const idx = events.findIndex(e => e.id === id);
+      if (idx === -1) return;
+      const ev = events[idx];
+      before.push({ id: ev.id, snapshot: Object.assign({}, ev) });
+      events.splice(idx, 1);
+      if (editingId === ev.id) resetForm();
+      // 和手动删除一样：收进「已删除」历史，随时能恢复
+      deleted.push(Object.assign({}, ev, { deletedAt: Date.now() }));
+    });
+    if (!before.length) return markSkipped();
+    saveDeleted();
+    msg.opUndo[i] = { kind: 'delete', items: before };
+  } else if (op.kind === 'update') {
+    const ev = events.find(e => e.id === op.evId);
+    if (!ev) return markSkipped();
+    const before = {
+      id: ev.id,
+      fields: { title: ev.title, date: ev.date, startTime: ev.startTime || '', endTime: ev.endTime || '', tag: ev.tag }
+    };
+    const patch = op.patch || {};
+    if (patch.title) ev.title = patch.title;
+    if (patch.date) ev.date = patch.date;
+    if (patch.startTime !== undefined) ev.startTime = patch.startTime;
+    if (patch.endTime !== undefined) ev.endTime = patch.endTime;
+    if (patch.tag) ev.tag = patch.tag;
+    msg.opUndo[i] = { kind: 'fields', items: [before] };
+  } else {
+    return markSkipped();
+  }
+
+  msg.opState[i] = 'done';
+  saveEvents();
+  renderAll();
+  return true;
+}
+
+/** 把这一批里还没做的操作全做掉 */
+function runPendingOps(msg) {
+  if (!msg || !Array.isArray(msg.ops)) return;
+  let changed = false;
+  msg.ops.forEach((op, i) => {
+    if (msg.opState[i]) return;
+    if (applyOp(msg, i)) changed = true;
+  });
+  if (changed) renderAll();
+  renderChat();
+}
+
+/** 撤销某一条操作 */
+function undoOp(msg, i) {
+  const u = msg && msg.opUndo && msg.opUndo[i];
+  if (!u) return;
+
+  if (u.kind === 'status') {
+    u.items.forEach(x => {
+      const ev = events.find(e => e.id === x.id);
+      if (ev) ev.status = x.status;
+    });
+  } else if (u.kind === 'fields') {
+    u.items.forEach(x => {
+      const ev = events.find(e => e.id === x.id);
+      if (ev) Object.assign(ev, x.fields);
+    });
+  } else if (u.kind === 'delete') {
+    u.items.forEach(x => {
+      const di = deleted.findIndex(d => d.id === x.id);
+      if (di !== -1) deleted.splice(di, 1);
+      if (!events.some(e => e.id === x.id)) events.push(Object.assign({}, x.snapshot));
+    });
+    saveDeleted();
+  }
+
+  msg.opState[i] = null;
+  msg.opUndo[i] = null;
+  saveEvents();
+  renderAll();
+  renderChat();
+}
+
+/** 撤销这一批里所有已执行的操作 */
+function undoAllOps(msg) {
+  if (!msg || !Array.isArray(msg.ops)) return;
+  msg.ops.forEach((op, i) => {
+    if (msg.opState[i] === 'done' && msg.opUndo[i]) {
+      const u = msg.opUndo[i];
+      if (u.kind === 'status') u.items.forEach(x => { const ev = events.find(e => e.id === x.id); if (ev) ev.status = x.status; });
+      if (u.kind === 'fields') u.items.forEach(x => { const ev = events.find(e => e.id === x.id); if (ev) Object.assign(ev, x.fields); });
+      if (u.kind === 'delete') u.items.forEach(x => {
+        const di = deleted.findIndex(d => d.id === x.id);
+        if (di !== -1) deleted.splice(di, 1);
+        if (!events.some(e => e.id === x.id)) events.push(Object.assign({}, x.snapshot));
+      });
+      msg.opState[i] = null;
+      msg.opUndo[i] = null;
+    }
+  });
+  saveDeleted();
+  saveEvents();
+  renderAll();
+  renderChat();
 }
 
 /** 确认模式下：点某一行的「记下」 */
