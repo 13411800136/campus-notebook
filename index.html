@@ -19,12 +19,30 @@
   <div class="desk-bg-veil"></div>
 </div>
 
-<!-- ===== 顶栏：总数统计 ===== -->
+<!-- ===== 顶栏：总数统计 + 小工具 ===== -->
 <header class="topbar">
   <h1>活动小本本</h1>
   <p class="stats" id="stats">共 0 条 · 即将到来 0 条 · 已完成 0 条</p>
-  <button type="button" class="link-btn" id="btn-notify" hidden>开启桌面提醒</button>
+  <div class="topbar-tools">
+    <button type="button" class="link-btn" id="btn-brief">简报</button>
+    <button type="button" class="link-btn" id="btn-stats">统计</button>
+    <button type="button" class="link-btn" id="btn-export">导出</button>
+    <button type="button" class="link-btn" id="btn-import">导入</button>
+    <button type="button" class="link-btn" id="btn-notify" hidden>开启桌面提醒</button>
+  </div>
+  <input type="file" id="import-file" accept=".json,application/json" hidden>
 </header>
+
+<!-- ===== 工具弹窗：简报 / 统计 / 导入结果 ===== -->
+<div class="overlay" id="tool-overlay" hidden>
+  <div class="dialog tool-dialog" role="dialog" aria-modal="true" aria-labelledby="tool-title">
+    <h3 id="tool-title">工具</h3>
+    <div id="tool-body"></div>
+    <div class="dialog-actions" id="tool-actions">
+      <button type="button" class="btn-ghost" id="tool-close">关闭</button>
+    </div>
+  </div>
+</div>
 
 <!-- ===== 到点提醒条（默认隐藏） ===== -->
 <div class="reminder-bar" id="reminder-bar" hidden>
@@ -184,6 +202,18 @@
             <input id="input-end" type="time" aria-label="结束时间（选填）">
           </div>
           <p class="error" id="error-time"></p>
+        </div>
+
+        <div class="field">
+          <label for="input-remind">提醒 <span class="hint">有具体时间才提醒</span></label>
+          <select id="input-remind">
+            <option value="0">到点提醒</option>
+            <option value="10">提前 10 分钟</option>
+            <option value="30">提前 30 分钟</option>
+            <option value="60">提前 1 小时</option>
+            <option value="1440">提前 1 天</option>
+            <option value="-1">不提醒</option>
+          </select>
         </div>
 
         <div class="field">

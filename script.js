@@ -256,6 +256,54 @@ function renderFilters() {
   });
 }
 
+/** "HH:MM" → 分钟数 */
+function hmToMin(hm) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(hm || '').trim());
+  if (!m) return null;
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+
+/** 活动占用的时间段（分钟）；没填开始时间的返回 null（全天不参与撞车判断） */
+function eventRange(ev) {
+  const start = hmToMin(ev.startTime);
+  if (start === null) return null;
+  const end = hmToMin(ev.endTime);
+  // 没填结束时间就按 1 小时算，够用来判断重不重叠
+  return { start: start, end: end === null ? start + 60 : Math.max(end, start + 1) };
+}
+
+/**
+ * 找出时间撞车的活动：同一天、时间段有交集、都还没完成。
+ * 返回 Map<活动id, 和它撞车的活动数组>
+ */
+function findConflicts(list) {
+  const byDate = new Map();
+  (list || []).forEach(ev => {
+    if (statusOf(ev) === 'done') return;
+    if (!eventRange(ev)) return;
+    if (!byDate.has(ev.date)) byDate.set(ev.date, []);
+    byDate.get(ev.date).push(ev);
+  });
+
+  const map = new Map();
+  byDate.forEach(dayList => {
+    for (let i = 0; i < dayList.length; i++) {
+      for (let j = i + 1; j < dayList.length; j++) {
+        const a = eventRange(dayList[i]);
+        const b = eventRange(dayList[j]);
+        if (!a || !b) continue;
+        if (a.start < b.end && b.start < a.end) {
+          if (!map.has(dayList[i].id)) map.set(dayList[i].id, []);
+          if (!map.has(dayList[j].id)) map.set(dayList[j].id, []);
+          map.get(dayList[i].id).push(dayList[j]);
+          map.get(dayList[j].id).push(dayList[i]);
+        }
+      }
+    }
+  });
+  return map;
+}
+
 /** 造一张活动卡片的 DOM */
 function buildCard(ev, diff) {
   const card = document.createElement('div');
@@ -298,6 +346,17 @@ function buildCard(ev, diff) {
   }
 
   meta.appendChild(tag);
+
+  // 和别的活动时间撞上了：给个琥珀色小标，悬停能看是哪几条
+  const clash = conflictMap && conflictMap.get(ev.id);
+  if (clash && clash.length) {
+    const badge = document.createElement('span');
+    badge.className = 'card-clash';
+    badge.textContent = '撞车';
+    badge.title = '时间重叠：' + clash.map(x => x.title).join('、');
+    meta.appendChild(badge);
+  }
+
   main.append(title, meta);
 
   if (ev.note) {
@@ -377,6 +436,9 @@ function renderList() {
   const box = document.getElementById('list');
   box.innerHTML = '';
 
+  // 时间撞车先算一遍，卡片上要用
+  conflictMap = findConflicts(events);
+
   // 两个筛选条件叠加：类别（上面那排按钮）+ 某一天（在日历上点出来的）
   const shown = events
     .filter(e => currentFilter === '全部' || e.tag === currentFilter)
@@ -444,9 +506,19 @@ function renderActive(box, shown, timeAsc) {
     return;
   }
 
+  // 过期的收在「历史」里，但待办页给个琥珀色入口，不然容易忘
+  const overdueCount = events.filter(e => statusOf(e) !== 'done' && daysFromToday(e.date) < 0).length;
+  if (overdueCount > 0) {
+    const hint = document.createElement('button');
+    hint.type = 'button';
+    hint.className = 'overdue-hint';
+    hint.textContent = '有 ' + overdueCount + ' 条已经过期、还没做完 → 去历史里处理';
+    hint.addEventListener('click', () => setView('history'));
+    box.appendChild(hint);
+  }
+
   box.appendChild(groupTitle('即将到来', todo.length));
-  todo.forEach(ev => box.appendChild(buildCard(ev, daysFromToday(ev.date))));
-}
+  todo.forEach(ev => box.appendChild(buildCard(ev, daysFromToday(ev.date))));}
 
 /** 历史视图：已完成 / 已过期 / 已删除 */
 function renderHistory(box, shown, timeDesc) {
@@ -498,7 +570,7 @@ function renderHistory(box, shown, timeDesc) {
 /** 已删除的那张卡：只能恢复或彻底删除 */
 function buildDeletedCard(ev) {
   const card = document.createElement('div');
-  card.className = 'card done';
+  card.className = 'card done deleted';
   card.id = 'card-' + ev.id;
 
   const main = document.createElement('div');
@@ -784,11 +856,13 @@ function renderCalendar() {
     num.textContent = d;
     cell.appendChild(num);
 
-    // 圆点只数「还没做完的」——那天全做完了，就打一个灰勾
+    // 圆点只数「还没做完的」——那天全做完了，就打一个灰勾；
+    // 过去的日子里还有没做完的，圆点变琥珀色（过期了）
     if (pending > 0) {
       const dot = document.createElement('span');
-      dot.className = 'cal-dot';
+      dot.className = 'cal-dot' + (key < today ? ' overdue' : '');
       dot.textContent = pending;
+      if (key < today) dot.title = '这天还有 ' + pending + ' 条没完成，已经过期';
       cell.appendChild(dot);
     } else if (dayEvents.length > 0) {
       const dot = document.createElement('span');
@@ -1232,6 +1306,10 @@ async function aiChat(text, imageDataUrl, history) {
     '- 用户问「我今天有什么」「这周还有几件事」这类问题时，照上面那份清单回答，清单里没有就说没有，绝不编。',
     '- 日期统一写成 YYYY-MM-DD。拿不准的字段一律给空字符串，绝不编造。没说年份按今年算；说了「明年」就按明年。',
     '',
+    '提醒（可选）：',
+    '- 活动可以带一个 "remindMin"：0 = 到点提醒（默认），10/30/60/1440 = 提前这么多分钟，-1 = 不提醒。',
+    '- 用户说「提前半小时提醒我」「前一天晚上说一声」时，把它算成分钟写进 remindMin（前一天晚上 ≈ 1440，按开始时间往前推）。没说就别给这个字段。',
+    '',
     '一次可以交代好几件事：',
     '- 用户可能一口气说好几件（粘贴一段群聊、发一张通知截图，或者「周三讲座、周五比赛、下周一交材料」），**每一件都单独列出来**，最多 8 条。',
     '- 同一件事的重复说法（「周三下午三点」和「10月21日 15:00」）合成一条，不要拆成两条。',
@@ -1264,7 +1342,7 @@ async function aiChat(text, imageDataUrl, history) {
     '只输出一个 JSON 对象，不要 Markdown 代码块，不要多余的解释。格式：',
     '{"reply":"给用户看的一句话","thinking":"你的判断","activities":[],"ops":[],"action":"none"}',
     '或者',
-    '{"reply":"...","thinking":"...","activities":[{"title":"...","date":"YYYY-MM-DD","startTime":"HH:MM","endTime":"HH:MM","tag":"类别名"}],"ops":[{"op":"complete","ids":[1,3]}],"action":"new"}'
+    '{"reply":"...","thinking":"...","activities":[{"title":"...","date":"YYYY-MM-DD","startTime":"HH:MM","endTime":"HH:MM","tag":"类别名","remindMin":30}],"ops":[{"op":"complete","ids":[1,3]}],"action":"new"}'
   ].join('\n');
 
   const messages = [{ role: 'system', content: system }];
@@ -1404,6 +1482,10 @@ function parseAiReply(content, text, index) {
       if (/^\d{2}:\d{2}$/.test(String(raw.startTime || ''))) patch.startTime = String(raw.startTime).trim();
       if (/^\d{2}:\d{2}$/.test(String(raw.endTime || ''))) patch.endTime = String(raw.endTime).trim();
       if (typeof raw.tag === 'string' && tags.indexOf(raw.tag) !== -1) patch.tag = raw.tag;
+      if (raw.remindMin !== undefined && raw.remindMin !== null) {
+        const n = Number(raw.remindMin);
+        if (Number.isFinite(n) && n >= -1 && n <= 1440) patch.remindMin = Math.round(n);
+      }
 
       if (!Object.keys(patch).length) return;
       ops.push({ kind: 'update', evId: evId, patch: patch });
@@ -1441,12 +1523,20 @@ function normalizeActivity(a, text) {
 
   if (!title && !isValidDateStr(date)) return null;
 
+  // 提前多少分钟提醒：只认 -1（不提醒）到 1440（提前一天）之间的整数
+  let remindMin = 0;
+  if (a.remindMin !== undefined && a.remindMin !== null && a.remindMin !== '') {
+    const n = Number(a.remindMin);
+    if (Number.isFinite(n) && n >= -1 && n <= 1440) remindMin = Math.round(n);
+  }
+
   return {
     title:     title || fallback.title,
     date:      isValidDateStr(date) ? date : fallback.date,
     startTime: /^\d{2}:\d{2}$/.test(a.startTime || '') ? a.startTime : fallback.startTime,
     endTime:   /^\d{2}:\d{2}$/.test(a.endTime || '') ? a.endTime : fallback.endTime,
-    tag:       tags.indexOf(a.tag) !== -1 ? a.tag : guessTag(title + ' ' + (text || ''))
+    tag:       tags.indexOf(a.tag) !== -1 ? a.tag : guessTag(title + ' ' + (text || '')),
+    remindMin: remindMin
   };
 }
 
@@ -2234,6 +2324,8 @@ function autoSaveActivity(a, action) {
       ev.startTime = a.startTime || '';
       ev.endTime = a.endTime || '';
       if (tags.indexOf(a.tag) !== -1) ev.tag = a.tag;
+      // 只有模型明确给了提前量才改，别把用户设的提醒顺手清掉
+      if (Number(a.remindMin) > 0 || Number(a.remindMin) === -1) ev.remindMin = Number(a.remindMin);
 
       saveEvents();
       flashSaved(ev.id);
@@ -2258,6 +2350,7 @@ function autoSaveActivity(a, action) {
     endTime: a.endTime || '',
     tag: tags.indexOf(a.tag) !== -1 ? a.tag : FALLBACK_TAG,
     note: '',                      // 备注留空：对话里的原话不往这儿塞
+    remindMin: Number.isFinite(Number(a.remindMin)) ? Number(a.remindMin) : 0,
     status: 'todo',
     createdAt: Date.now()
   };
@@ -2376,6 +2469,10 @@ function describeOp(op) {
     if (op.patch.startTime) bits.push(op.patch.startTime + (op.patch.endTime ? '–' + op.patch.endTime : ''));
     if (op.patch.title) bits.push('「' + op.patch.title + '」');
     if (op.patch.tag) bits.push('#' + op.patch.tag);
+    if (op.patch.remindMin !== undefined) {
+      bits.push(Number(op.patch.remindMin) === -1 ? '不提醒' :
+        Number(op.patch.remindMin) === 0 ? '到点提醒' : '提前 ' + op.patch.remindMin + ' 分钟');
+    }
     return what + '：' + names.join('、') + (bits.length ? ' → ' + bits.join(' ') : '');
   }
 
@@ -2434,6 +2531,7 @@ function applyOp(msg, i) {
     if (patch.startTime !== undefined) ev.startTime = patch.startTime;
     if (patch.endTime !== undefined) ev.endTime = patch.endTime;
     if (patch.tag) ev.tag = patch.tag;
+    if (patch.remindMin !== undefined) ev.remindMin = patch.remindMin;
     msg.opUndo[i] = { kind: 'fields', items: [before] };
   } else {
     return markSkipped();
@@ -3028,6 +3126,8 @@ function handleSubmit(e) {
   const startBox = document.getElementById('input-start');
   const endBox = document.getElementById('input-end');
   const noteBox = document.getElementById('input-note');
+  const remindBox = document.getElementById('input-remind');
+  const remindMin = remindBox ? Number(remindBox.value) : 0;
 
   const wasEditing = editingId !== null;
   let savedId = null;
@@ -3043,6 +3143,7 @@ function handleSubmit(e) {
       target.endTime = endBox.value;
       target.tag = currentTag;
       target.note = noteBox.value.trim();
+      target.remindMin = remindMin;
       savedId = target.id;
     }
   } else {
@@ -3055,6 +3156,7 @@ function handleSubmit(e) {
       endTime: endBox.value,       // 可选
       tag: currentTag,
       note: noteBox.value.trim(),
+      remindMin: remindMin,        // 0=到点 / 正数=提前多少分钟 / -1=不提醒
       status: 'todo',              // 新记的一律从「未开始」起步
       createdAt: Date.now(),
     });
@@ -3172,6 +3274,8 @@ function startEdit(ev) {
   document.getElementById('input-start').value = ev.startTime || '';
   document.getElementById('input-end').value = ev.endTime || '';
   document.getElementById('input-note').value = ev.note || '';
+  const remindBox = document.getElementById('input-remind');
+  if (remindBox) remindBox.value = String(Number.isFinite(Number(ev.remindMin)) ? Number(ev.remindMin) : 0);
 
   // 这条用的类别万一已经被删了，退回第一个，别让表单停在空状态
   currentTag = tags.includes(ev.tag) ? ev.tag : tags[0];
@@ -3211,6 +3315,8 @@ function resetForm() {
   document.getElementById('input-start').value = '';
   document.getElementById('input-end').value = '';
   document.getElementById('input-note').value = '';
+  const remindBox = document.getElementById('input-remind');
+  if (remindBox) remindBox.value = '0';
 
   clearFieldErrors();
 
@@ -3356,20 +3462,37 @@ function nowHHMM() {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-function reminderKey(ev) {
-  return `${ev.id}@${ev.date}@${ev.startTime}`;
+/**
+ * 提醒时间点 = 开始时间 - 提前量。
+ * 没填具体时间（全天）或设成「不提醒」的返回 null。
+ */
+function remindTarget(ev) {
+  if (!/^\d{2}:\d{2}$/.test(ev.startTime || '')) return null;
+  const before = Number(ev.remindMin);
+  if (before === -1) return null;
+  const start = new Date(ev.date + 'T' + ev.startTime + ':00');
+  if (isNaN(start.getTime())) return null;
+  const mins = Number.isFinite(before) ? before : 0;
+  return new Date(start.getTime() - mins * 60000);
 }
 
-/** 此刻该提醒的活动：今天、填了开始时间、还没标成已完成、开始时间已到 */
+function reminderKey(ev) {
+  return `${ev.id}@${ev.date}@${ev.startTime}@${Number(ev.remindMin) || 0}`;
+}
+
+/**
+ * 此刻该提醒的活动：还没标成已完成、有具体时间、已经到（或过了）提醒点。
+ * 只看「30 分钟内」，避免你下午打开页面时被早上九点的活动刷屏。
+ */
 function dueReminders() {
-  const today = todayStr();
-  const hm = nowHHMM();
-  return events.filter(ev =>
-    ev.date === today &&
-    ev.startTime &&
-    statusOf(ev) !== 'done' &&
-    ev.startTime <= hm
-  );
+  const now = Date.now();
+  return events.filter(ev => {
+    if (statusOf(ev) === 'done') return false;
+    const t = remindTarget(ev);
+    if (!t) return false;
+    const d = now - t.getTime();
+    return d >= 0 && d < 30 * 60000;
+  });
 }
 
 /**
@@ -3393,10 +3516,23 @@ function checkReminders() {
 /** 顶部提醒条 + 尝试发系统通知 + 不依赖权限的兜底（标题闪烁 + 提示音） */
 function showReminder(ev) {
   const when = ev.endTime ? `${ev.startTime}–${ev.endTime}` : ev.startTime;
-  const text = `${when} · ${ev.title}`;
+
+  // 说「还有多久」比说「提前多少分钟」更贴切：按真实距离算
+  let lead = '';
+  const start = new Date(ev.date + 'T' + (ev.startTime || '00:00') + ':00');
+  if (!isNaN(start.getTime())) {
+    const mins = Math.round((start.getTime() - Date.now()) / 60000);
+    if (mins > 0) {
+      lead = mins < 60 ? `${mins} 分钟后 ` :
+             mins < 1440 ? `${Math.round(mins / 60)} 小时后 ` :
+                           `${Math.round(mins / 1440)} 天后 `;
+    }
+  }
+
+  const text = `${lead}${when} · ${ev.title}`;
 
   showBanner(text);
-  systemNotify('活动开始了', text);
+  systemNotify(lead ? '活动提醒' : '活动开始了', text);
   flashTitle(when);      // 页面在后台也能看到标签页标题在闪
   beep();                // 很轻的一声，不需要任何权限
 }
@@ -3537,6 +3673,9 @@ let undoTimer = null;
 // 正在编辑哪一条。null = 不在编辑状态，表单就是普通的「新增一条」
 let editingId = null;
 
+// 这一轮渲染里，哪些活动和别的活动时间撞车了（id → 撞上的那几条）
+var conflictMap = new Map();
+
 // 哪些活动的长备注被展开了。记在这里，列表重画之后还是展开的。
 const expandedNotes = new Set();
 
@@ -3640,4 +3779,507 @@ function init() {
   });
 }
 
+/* ==========================================================
+ * ⑧ 小工具：简报 / 统计 / 导入导出
+ * ========================================================== */
+
+/** 打开通用工具弹窗，build(body) 里往 body 里塞内容 */
+function openTool(title, build) {
+  const overlay = document.getElementById('tool-overlay');
+  const body = document.getElementById('tool-body');
+  document.getElementById('tool-title').textContent = title;
+  body.innerHTML = '';
+  build(body);
+  overlay.hidden = false;
+}
+
+function closeTool() {
+  const overlay = document.getElementById('tool-overlay');
+  if (!overlay) return;
+  overlay.hidden = true;
+  document.getElementById('tool-body').innerHTML = '';
+}
+
+/** 今天往后 n 天的日期键 */
+function datePlus(days) {
+  const d = new Date(todayStr() + 'T00:00:00');
+  d.setDate(d.getDate() + days);
+  return dateKey(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+function timeLabelOf(ev) {
+  if (!ev.startTime) return '全天';
+  return ev.endTime ? ev.startTime + '–' + ev.endTime : ev.startTime;
+}
+
+/** 本机生成的一段简报（不花额度，随时能看） */
+function briefingText() {
+  const t = todayStr();
+  const todayList = events
+    .filter(e => e.date === t)
+    .sort((a, b) => (a.startTime || '99:99').localeCompare(b.startTime || '99:99'));
+
+  const overdue = events
+    .filter(e => statusOf(e) !== 'done' && e.date < t)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const nextWeek = events
+    .filter(e => statusOf(e) !== 'done' && e.date > t && e.date <= datePlus(7))
+    .sort((a, b) => a.date.localeCompare(b.date) || (a.startTime || '99:99').localeCompare(b.startTime || '99:99'));
+
+  const doneToday = todayList.filter(e => statusOf(e) === 'done').length;
+
+  const lines = [];
+  lines.push('今天 · ' + formatDateCN(t));
+  lines.push('');
+
+  if (!todayList.length) {
+    lines.push('今天没有安排。');
+  } else {
+    lines.push('今天 ' + todayList.length + ' 条，已完成 ' + doneToday + ' 条：');
+    todayList.forEach(e => {
+      lines.push('· ' + timeLabelOf(e) + '  ' + e.title + '  #' + e.tag +
+        (statusOf(e) === 'done' ? '  （已完成）' : ''));
+    });
+  }
+
+  if (overdue.length) {
+    lines.push('');
+    lines.push('已经过期、还没做完 ' + overdue.length + ' 条：');
+    overdue.slice(0, 6).forEach(e => {
+      lines.push('· ' + formatDateCN(e.date) + '  ' + e.title + '  #' + e.tag);
+    });
+    if (overdue.length > 6) lines.push('…还有 ' + (overdue.length - 6) + ' 条');
+  }
+
+  if (nextWeek.length) {
+    lines.push('');
+    lines.push('未来 7 天 ' + nextWeek.length + ' 条：');
+    nextWeek.slice(0, 8).forEach(e => {
+      const d = daysFromToday(e.date);
+      lines.push('· ' + (d === 1 ? '明天 ' : formatDateCN(e.date) + ' ') + timeLabelOf(e) + '  ' + e.title);
+    });
+    if (nextWeek.length > 8) lines.push('…还有 ' + (nextWeek.length - 8) + ' 条');
+  }
+
+  const total = events.length;
+  const done = events.filter(e => statusOf(e) === 'done').length;
+  if (total) {
+    lines.push('');
+    lines.push('全部 ' + total + ' 条，已完成 ' + done + ' 条（' + Math.round(done / total * 100) + '%）。');
+  }
+
+  return lines.join('\n');
+}
+
+/** 复制到剪贴板：先试 async API，不行就退回老办法 */
+async function copyText(text) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (err) { /* 继续走兜底 */ }
+
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok;
+  } catch (err) {
+    return false;
+  }
+}
+
+/** 通用的一次性 AI 问答（简报润色用） */
+async function aiAskOnce(system, user, maxTokens) {
+  const c = loadAiConfig();
+  const url = normalizeAiBase(c.base);
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + c.key },
+    body: JSON.stringify({
+      model: c.model,
+      temperature: 0.5,
+      max_tokens: maxTokens || 700,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user }
+      ]
+    })
+  });
+  if (!res.ok) throw new Error('接口返回 ' + res.status);
+  const data = await res.json();
+  const msg = data && data.choices && data.choices[0] && data.choices[0].message;
+  const text = msg && msg.content;
+  if (!text) throw new Error('返回内容为空');
+  return String(text).trim();
+}
+
+function openBrief() {
+  openTool('简报', body => {
+    const pre = document.createElement('pre');
+    pre.className = 'tool-text';
+    pre.textContent = briefingText();
+    body.appendChild(pre);
+
+    const row = document.createElement('div');
+    row.className = 'tool-row';
+
+    const copy = document.createElement('button');
+    copy.type = 'button';
+    copy.className = 'btn-ghost';
+    copy.textContent = '复制';
+    copy.addEventListener('click', async () => {
+      const ok = await copyText(pre.textContent);
+      copy.textContent = ok ? '已复制 ✓' : '复制失败';
+      setTimeout(() => { copy.textContent = '复制'; }, 1400);
+    });
+    row.appendChild(copy);
+
+    if (aiReady()) {
+      const polish = document.createElement('button');
+      polish.type = 'button';
+      polish.className = 'btn-primary';
+      polish.textContent = '让 AI 写成一段话';
+      polish.addEventListener('click', async () => {
+        polish.disabled = true;
+        polish.textContent = '正在写…';
+        try {
+          const out = await aiAskOnce(
+            '你是学生的日程助理。把给你的清单写成两三句自然的口语，直接能发到班级群里。不要分点，不要加标题，不要编清单里没有的事。',
+            pre.textContent,
+            500
+          );
+          pre.textContent = out;
+        } catch (err) {
+          const tip = document.createElement('p');
+          tip.className = 'tool-error';
+          tip.textContent = '没写成：' + err.message;
+          body.insertBefore(tip, row);
+        }
+        polish.disabled = false;
+        polish.textContent = '让 AI 写成一段话';
+      });
+      row.appendChild(polish);
+    }
+
+    body.appendChild(row);
+  });
+}
+
+/* ---------- 统计 ---------- */
+
+function openStats() {
+  openTool('统计', body => {
+    const t = todayStr();
+    const monthPrefix = t.slice(0, 7);   // "2026-10"
+
+    const monthEvents = events.filter(e => e.date.startsWith(monthPrefix));
+    const monthDone = monthEvents.filter(e => statusOf(e) === 'done').length;
+    const overdue = events.filter(e => statusOf(e) !== 'done' && e.date < t).length;
+    const rate = monthEvents.length ? Math.round(monthDone / monthEvents.length * 100) : 0;
+
+    const grid = document.createElement('div');
+    grid.className = 'stat-grid';
+
+    const cards = [
+      { num: monthEvents.length, label: '本月活动' },
+      { num: monthDone, label: '本月完成' },
+      { num: rate + '%', label: '本月完成率' },
+      { num: overdue, label: '过期未完成' }
+    ];
+    cards.forEach(c => {
+      const box = document.createElement('div');
+      box.className = 'stat-card';
+      const n = document.createElement('strong');
+      n.textContent = c.num;
+      const l = document.createElement('span');
+      l.textContent = c.label;
+      box.append(n, l);
+      grid.appendChild(box);
+    });
+    body.appendChild(grid);
+
+    const canvas = document.createElement('canvas');
+    canvas.className = 'stat-canvas';
+    body.appendChild(canvas);
+    drawTagBars(canvas, monthEvents);
+  });
+}
+
+function drawTagBars(canvas, monthEvents) {
+  const dpr = window.devicePixelRatio || 1;
+  const W = 480;
+  const H = 220;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  canvas.width = Math.round(W * dpr);
+  canvas.height = Math.round(H * dpr);
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, W, H);
+
+  // 按类别数一数（本月）
+  const counts = new Map();
+  monthEvents.forEach(e => counts.set(e.tag, (counts.get(e.tag) || 0) + 1));
+  const rows = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 6);
+
+  ctx.font = '12px "Segoe UI", "Microsoft YaHei", sans-serif';
+  ctx.fillStyle = '#6b6255';
+  ctx.fillText('本月活动 · 按类别', 4, 14);
+
+  if (!rows.length) {
+    ctx.fillStyle = '#a09480';
+    ctx.fillText('这个月还没有活动', 4, 48);
+    return;
+  }
+
+  const max = Math.max.apply(null, rows.map(r => r[1]));
+  const top = 34;
+  const rowH = 28;
+  const labelW = 76;
+  const barW = W - labelW - 46;
+
+  rows.forEach((r, i) => {
+    const y = top + i * rowH;
+
+    ctx.fillStyle = '#4a4238';
+    ctx.fillText(String(r[0]).slice(0, 5), 4, y + 15);
+
+    const w = Math.max(6, Math.round(barW * r[1] / max));
+    const grad = ctx.createLinearGradient(labelW, 0, labelW + barW, 0);
+    grad.addColorStop(0, '#8fae86');
+    grad.addColorStop(1, '#6f8c6b');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(labelW, y + 4, w, 14, 7) : ctx.rect(labelW, y + 4, w, 14);
+    ctx.fill();
+
+    ctx.fillStyle = '#6b6255';
+    ctx.fillText(String(r[1]), labelW + w + 8, y + 15);
+  });
+}
+
+/* ---------- 导入 / 导出 ---------- */
+
+function exportData() {
+  const payload = {
+    app: '活动小本本',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    tags: tags.slice(),
+    events: events.map(e => Object.assign({}, e)),
+    deleted: deleted.map(e => Object.assign({}, e))
+  };
+
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = '活动小本本-备份-' + todayStr().replace(/-/g, '') + '.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 3000);
+
+  showBanner('已导出 ' + events.length + ' 条活动（含 ' + deleted.length + ' 条已删除）');
+}
+
+/** 把外来数据整理成能用的活动对象，坏的直接丢掉 */
+function normalizeImported(list) {
+  const out = [];
+  (Array.isArray(list) ? list : []).forEach(item => {
+    if (!item || typeof item !== 'object') return;
+    const title = typeof item.title === 'string' ? item.title.trim().slice(0, 50) : '';
+    const date = typeof item.date === 'string' && isValidDateStr(item.date) ? item.date : '';
+    if (!title || !date) return;
+
+    const status = ['todo', 'doing', 'done'].indexOf(item.status) !== -1 ? item.status : 'todo';
+    const startTime = /^\d{2}:\d{2}$/.test(String(item.startTime || '')) ? item.startTime : '';
+    const endTime = /^\d{2}:\d{2}$/.test(String(item.endTime || '')) ? item.endTime : '';
+
+    out.push({
+      id: typeof item.id === 'string' && item.id ? item.id : 'e-' + Date.now() + '-' + out.length,
+      title: title,
+      date: date,
+      startTime: startTime,
+      endTime: endTime,
+      tag: typeof item.tag === 'string' && item.tag ? item.tag : '未分类',
+      note: typeof item.note === 'string' ? item.note.slice(0, 500) : '',
+      remindMin: Number.isFinite(Number(item.remindMin)) ? Number(item.remindMin) : 0,
+      status: status,
+      createdAt: Number.isFinite(Number(item.createdAt)) ? Number(item.createdAt) : Date.now()
+    });
+  });
+  return out;
+}
+
+function openImportReview(incoming, incomingDeleted, incomingTags) {
+  openTool('导入', body => {
+    const info = document.createElement('p');
+    info.className = 'tool-note';
+    info.textContent = '文件里有 ' + incoming.length + ' 条活动、' + incomingDeleted.length +
+      ' 条已删除记录。现在列表里有 ' + events.length + ' 条。选一种合并方式：';
+    body.appendChild(info);
+
+    const row = document.createElement('div');
+    row.className = 'tool-row';
+
+    const merge = document.createElement('button');
+    merge.type = 'button';
+    merge.className = 'btn-primary';
+    merge.textContent = '合并导入';
+    merge.addEventListener('click', () => applyImport(incoming, incomingDeleted, incomingTags, 'merge'));
+    row.appendChild(merge);
+
+    const replace = document.createElement('button');
+    replace.type = 'button';
+    replace.className = 'btn-danger';
+    replace.textContent = '覆盖导入';
+    replace.addEventListener('click', () => applyImport(incoming, incomingDeleted, incomingTags, 'replace'));
+    row.appendChild(replace);
+
+    body.appendChild(row);
+
+    const warn = document.createElement('p');
+    warn.className = 'tool-note';
+    warn.textContent = '「合并」只加列表里没有的；「覆盖」会清空当前全部活动，换成文件里的（删除也一样）。';
+    body.appendChild(warn);
+  });
+}
+
+function applyImport(incoming, incomingDeleted, incomingTags, mode) {
+  if (mode === 'replace') {
+    events = incoming.map(e => Object.assign({}, e));
+    deleted = normalizeImported(incomingDeleted).map(e => Object.assign({}, e, { deletedAt: Date.now() }));
+    if (incomingTags.length) tags = Array.from(new Set(incomingTags.filter(t => typeof t === 'string' && t)));
+  } else {
+    const ids = new Set(events.map(e => e.id));
+    const keys = new Set(events.map(e => (e.title + '|' + e.date + '|' + (e.startTime || ''))));
+    let added = 0;
+    incoming.forEach(e => {
+      const key = e.title + '|' + e.date + '|' + (e.startTime || '');
+      if (ids.has(e.id) || keys.has(key)) return;
+      ids.add(e.id);
+      keys.add(key);
+      events.push(Object.assign({}, e));
+      added++;
+    });
+    // 标签取并集
+    incomingTags.forEach(t => {
+      if (typeof t === 'string' && t && tags.indexOf(t) === -1) tags.push(t);
+    });
+    events.forEach(e => { if (tags.indexOf(e.tag) === -1) tags.push(e.tag); });
+
+    saveAll();
+    renderAll();
+    closeTool();
+    showBanner('合并导入 ' + added + ' 条（跳过重复 ' + (incoming.length - added) + ' 条）');
+    return;
+  }
+
+  saveAll();
+  renderAll();
+  closeTool();
+  showBanner('已覆盖导入 ' + events.length + ' 条活动');
+}
+
+/** 导入时用来兜底的保存（saveEvents / saveDeleted / 标签） */
+function saveAll() {
+  saveEvents();
+  saveDeleted();
+  saveTags();
+}
+
+function readImportFile(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    let data = null;
+    try {
+      data = JSON.parse(String(reader.result));
+    } catch (err) {
+      openTool('导入失败', body => {
+        const p = document.createElement('p');
+        p.className = 'tool-note';
+        p.textContent = '这个文件不是 JSON，或者内容被改坏了。';
+        body.appendChild(p);
+      });
+      return;
+    }
+
+    const rawEvents = Array.isArray(data) ? data : (data && Array.isArray(data.events) ? data.events : null);
+    if (!rawEvents) {
+      openTool('导入失败', body => {
+        const p = document.createElement('p');
+        p.className = 'tool-note';
+        p.textContent = '文件里没找到活动列表（应该有一个 events 数组）。';
+        body.appendChild(p);
+      });
+      return;
+    }
+
+    const incoming = normalizeImported(rawEvents);
+    const incomingDeleted = normalizeImported(data && data.deleted);
+    const incomingTags = (data && Array.isArray(data.tags)) ? data.tags : [];
+
+    if (!incoming.length) {
+      openTool('导入失败', body => {
+        const p = document.createElement('p');
+        p.className = 'tool-note';
+        p.textContent = '文件里的活动都缺名称或日期，一条能用的都没有。';
+        body.appendChild(p);
+      });
+      return;
+    }
+
+    openImportReview(incoming, incomingDeleted, incomingTags);
+  };
+
+  reader.readAsText(file);
+}
+
+function initTools() {
+  const brief = document.getElementById('btn-brief');
+  if (brief) brief.addEventListener('click', openBrief);
+
+  const stats = document.getElementById('btn-stats');
+  if (stats) stats.addEventListener('click', openStats);
+
+  const exp = document.getElementById('btn-export');
+  if (exp) exp.addEventListener('click', exportData);
+
+  const imp = document.getElementById('btn-import');
+  const fileInput = document.getElementById('import-file');
+  if (imp && fileInput) {
+    imp.addEventListener('click', () => { fileInput.value = ''; fileInput.click(); });
+    fileInput.addEventListener('change', () => {
+      const f = fileInput.files && fileInput.files[0];
+      if (f) readImportFile(f);
+    });
+  }
+
+  const close = document.getElementById('tool-close');
+  if (close) close.addEventListener('click', closeTool);
+
+  const overlay = document.getElementById('tool-overlay');
+  if (overlay) {
+    overlay.addEventListener('click', ev => {
+      if (ev.target === overlay) closeTool();
+    });
+  }
+
+  document.addEventListener('keydown', ev => {
+    if (ev.key === 'Escape' && overlay && !overlay.hidden) closeTool();
+  });
+}
+
+initTools();
 init();
