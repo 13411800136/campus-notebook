@@ -1351,3 +1351,39 @@ html[data-theme="dark"] .topbar h1 {
   color: var(--ink);
 }
 
+
+/* 背景加载不出来时的兜底：一块像样的深色底 + 一条可关掉的说明 */
+#desk-bg.is-fallback {
+  background:
+    radial-gradient(120% 90% at 50% 8%, #2b3037 0%, #1a1e24 55%, #0e1014 100%);
+}
+
+.bg-hint {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 30;
+  max-width: 380px;
+  padding: 11px 13px;
+  font-size: 12px;
+  line-height: 1.65;
+  color: #f2ede1;
+  background: rgba(24, 28, 34, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.42);
+}
+
+.bg-hint button {
+  display: block;
+  margin-top: 8px;
+  padding: 3px 11px;
+  font-size: 11.5px;
+  color: #f2ede1;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.bg-hint button:hover { background: rgba(255, 255, 255, 0.18); }
