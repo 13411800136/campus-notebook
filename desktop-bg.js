@@ -1,4 +1,4 @@
-/* =========================================================
+﻿/* =========================================================
    活动小本本 · 背景层胶水 + 交互
    ---------------------------------------------------------
    1) 渲染预算：背景最多按 2K（2560×1440）渲染再放大铺满，
@@ -182,48 +182,6 @@
     ready = true;
     layer.classList.add('is-ready');
     applyParallax();
-    checkScene(3);
-  }
-
-  /* 背景页虽然报「就绪」，但如果里面没有 canvas（多半是浏览器不让读本地壁纸，
-     比如双击 index.html 或走 http://localhost 打开），就换成兜底底图 + 一条说明 */
-  function hasScene() {
-    try {
-      var doc = frame.contentDocument;
-      return !!(doc && doc.querySelector('canvas'));
-    } catch (e) {
-      return false;
-    }
-  }
-
-  var fallbackShown = false;
-
-  function checkScene(tries) {
-    if (hasScene()) return;
-    if (tries <= 0) { showFallback(); return; }
-    window.setTimeout(function () { checkScene(tries - 1); }, 1200);
-  }
-
-  function showFallback() {
-    if (fallbackShown) return;
-    fallbackShown = true;
-    layer.classList.add('is-fallback');
-
-    var hint = document.createElement('div');
-    hint.className = 'bg-hint';
-
-    var text = document.createElement('span');
-    text.textContent = '3D 背景没加载：它需要桌面版打开（活动小本本.exe 或桌面快捷方式）。' +
-      '网页里浏览器不让读本地壁纸，所以这里是深色底，其它功能都一样。';
-
-    var close = document.createElement('button');
-    close.type = 'button';
-    close.textContent = '知道了';
-    close.addEventListener('click', function () { hint.remove(); });
-
-    hint.appendChild(text);
-    hint.appendChild(close);
-    document.body.appendChild(hint);
   }
 
   /* 兜底：慢机器上也别让背景一直黑着 */

@@ -1,4 +1,4 @@
-# ---- 桌面启动器：打包产物，不入库 ----
+﻿# ---- 桌面启动器：打包产物，不入库 ----
 活动小本本.exe
 *.exe
 *.o
@@ -12,3 +12,6 @@ desktop.ini
 .DS_Store
 # 启动器备份（含旧的快捷方式，不入库）
 activity-backup/
+
+# 壁纸目录的软链接（指向本机 Wallpaper Engine 那张壁纸，不属于仓库）
+wallpaper/

@@ -78,15 +78,23 @@
 > 部署：仓库 → Settings → Pages → Source 选 `main` 分支 `/ (root)`，等一两分钟。根目录是应用，展示页在 `/landing.html`。
 > 没部署也没关系——录屏同样满足考核要求。
 
-## 可选：Rhine Lab 交互背景（Windows 桌面版）
+## 可选：Rhine Lab 交互背景
 
-桌面版叠了一层 3D 交互背景（把 Wallpaper Engine 上的「Rhine Lab 交互桌面」接进来），文件是 `desktop-theme.css`、`desktop-bg.js`、`desktop-bg/index.html`，说明见 [交互背景-说明.md](交互背景-说明.md)。
+把 Wallpaper Engine 上的「Rhine Lab 交互桌面」接进来当背景（3D 档案阵列 + 视差 + 跟随鼠标的柔光），相关文件是 `desktop-theme.css`、`desktop-bg.js`、`desktop-bg/index.html`，细节见 [交互背景-说明.md](交互背景-说明.md)。
 
-- **双击 `index.html`**：普通网页，没有 3D 背景（浏览器不允许页面读本地模型），**功能完全一样**
-- **要背景**：用桌面快捷方式或 `活动小本本.exe` 启动（Edge 的 `--app` + `--allow-file-access-from-files`）
-- 背景引用的是**本机已装的那张壁纸**，仓库不含任何模型/字体文件；换台机器会自动退成纯色底
+**浏览器里也能有背景**（不用改 Edge 的任何东西，也不用特殊参数）：
 
-> 只影响外观；删掉 `desktop-theme.css` / `desktop-bg.js` / `desktop-bg/` 就回到原来的纯样式。
+1. 双击 **`建壁纸软链接（双击我）.bat`**：它会在项目里建一个 `wallpaper` 软链接（`mklink /J`，不需要管理员），指向
+   `D:\SteamLibrary\steamapps\workshop\content\431960\3799142774`；
+2. 双击 **`启动本地服务（双击我）.bat`** → 浏览器打开 `http://localhost:8899/`。
+
+这时背景页会以 `http://localhost:8899/wallpaper/…` 加载同一套壁纸资源（同源，浏览器不拦），**和 Wallpaper Engine 里是同一个场景**。
+
+- **桌面版**（`活动小本本.exe` / 桌面快捷方式）走的是 `file://` 绝对路径，同样有背景；
+- 直接双击 `index.html`（不用服务）时浏览器禁止跨目录读本地文件，背景加载不出来——这是浏览器安全限制，不是程序坏了；
+- 仓库和压缩包里**不含**任何壁纸模型/字体：`wallpaper` 只是指向本机那张壁纸的软链接，换台机器重跑一次那个 bat 就行。
+
+> 只影响外观；删掉 `desktop-theme.css` / `desktop-bg.js` / `desktop-bg/` / `wallpaper` 就回到纯样式。
 
 ## 数据与隐私
 

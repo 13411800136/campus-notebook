@@ -13,8 +13,26 @@
   2) 只留下 3D 档案阵列的那一层画布；
   3) 让宿主按需改主题/画质（activity-bg.js 里读 URL 参数）。
   如果哪天壁纸被卸载/移动，把下面 <base> 换成新路径即可。
+
+  目录选择：
+  · 用桌面版（活动小本本.exe，带 --allow-file-access-from-files）打开 → 走 file:// 绝对路径；
+  · 用本地服务（启动本地服务.bat → http://localhost:8899/）打开 → 走项目里的 wallpaper/
+    软链接（mklink /J，指向同一个壁纸目录），这样浏览器不用任何特殊参数也能加载。
 -->
-<base href="file:///D:/SteamLibrary/steamapps/workshop/content/431960/3799142774/">
+<base id="bg-base" href="file:///D:/SteamLibrary/steamapps/workshop/content/431960/3799142774/">
+<script>
+  (function () {
+    var b = document.getElementById('bg-base');
+    if (!b) return;
+    var isHttp = location.protocol === 'http:' || location.protocol === 'https:';
+    if (!isHttp) return;
+    try {
+      b.setAttribute('href', new URL('../wallpaper/', location.href).href);
+    } catch (e) {
+      b.setAttribute('href', '/wallpaper/');
+    }
+  })();
+</script>
 
 <link rel="stylesheet" href="./assets/index-Bg7aiZZN.css">
 
