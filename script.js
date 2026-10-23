@@ -1180,13 +1180,33 @@ function guessTitle(text) {
   let t = firstLine.trim();
   t = t.replace(/^[【\[][^】\]]{0,10}[】\]]\s*/, '');   // 去掉开头短的【通知】【提醒】等
   t = t.replace(/^[\s·•\-—:：,，]+/, '');
+
+  // 微信里常见「大家注意：…」「通知：…」，把开头那个称呼去掉（只认这几种，别把活动名当称呼切了）
+  if (/^(大家|各位|同学们?|同学|注意|通知|提醒|重要|紧急|备注|ps|PS)[^：:]{0,4}[：:]\s*/.test(t)) {
+    t = t.replace(/^[^：:]{1,10}[：:]\s*/, '');
+  }
+
   t = t.replace(/[。！？!?].*$/, '');                  // 只取第一句
+
+  // 有的通知是「10月25日19:00 学院辩论赛报名截止」「本周三下午三点职业规划讲座」——
+  // 日期时间在最前面，名称在它后面，这时把开头那段日期时间剥掉
+  const stripLead = (s) => {
+    let r = s;
+    r = r.replace(/^\s*(?:20\d{2}[-\/]\d{1,2}[-\/]\d{1,2}|\d{1,2}\s*月\s*\d{1,2}\s*[日号]|(?:本|这|下下?|上)?\s*(?:周|星期|礼拜)\s*[一二三四五六日天])\s*/, '');
+    r = r.replace(/^\s*(?:上午|下午|晚上|中午|早上)?\s*(?:[一二三四五六七八九十]{1,3}\s*[点时](?:半|\d{1,2}分?)?|\d{1,2}[:：]\d{2})\s*/, '');
+    r = r.replace(/^[，,、:：\s]+/, '');
+    r = r.replace(/^(?:前|之前|以前|以后|后)\s*/, '');
+    return r.trim();
+  };
+  const lead = stripLead(t);
+  if (lead && lead.length >= 4 && lead !== t) t = lead;
 
   // 名称通常写在前面，所以想把第一个日期/时间之后的内容切掉。
   // 但不能见日期就切 —— 「周三晚上7点在三教…」切完只剩「周三晚上」，反而没法用。
   // 判断标准：日期前面有空格或标点（说明名称确实结束了），或者前面已经够长。
   const dateTimeSrc = '\\d{1,2}\\s*月\\s*\\d{1,2}\\s*[日号]'
                     + '|20\\d{2}[-\\/]\\d{1,2}[-\\/]\\d{1,2}'
+                    + '|(?:本|这|下下?|上)?\\s*(?:周|星期|礼拜)\\s*[一二三四五六日天]'
                     + '|\\d{1,2}[:：]\\d{2}'
                     + '|\\d{1,2}\\s*[点时]';
   const dm = t.match(new RegExp('(\\s*)(?:' + dateTimeSrc + ').*$'));
@@ -1200,12 +1220,17 @@ function guessTitle(text) {
   // 这是字段名不是名称，去掉
   t = t.replace(/[\s，,、·:：]*(时间|地点|日期|主题|内容|名称|活动名称)\s*[:：]?\s*$/, '');
 
+  // 微信通知常见长句：「职业规划讲座，本周三下午三点，三教201」——
+  // 切掉日期后还剩前半句时，逗号后面通常是地点/要求，不是名称
+  const comma = t.search(/[，,；;]/);
+  if (comma >= 5) t = t.slice(0, comma);
+
   t = t.trim();
   if (t.length > 30) t = t.slice(0, 30) + '…';
   return t || '未命名活动';
 }
 
-/** 日期：只认 2026-10-20 / 10月20日 / 10/20 三种写法；算出来不合法就返回空 */
+/** 日期：只认 2026-10-20 / 10月20日 / 10/20 / 周三 这几种写法；算出来不合法就返回空 */
 function guessDate(text) {
   const y = new Date().getFullYear();
 
@@ -1214,6 +1239,30 @@ function guessDate(text) {
 
   m = text.match(/(\d{1,2})\s*月\s*(\d{1,2})\s*[日号]/);
   if (m) return makeDateStr(y, m[1], m[2]);
+
+  // 周三 / 本周三 / 下周三 / 下下周三 / 星期三 / 礼拜三
+  // 微信里最常见的就是「本周三下午三点」这种相对说法
+  const weekMap = { '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '日': 0, '天': 0 };
+  m = text.match(/(下下|下|本|这|上)?\s*(?:周|星期|礼拜)\s*([一二三四五六日天])/);
+  if (m) {
+    const prefix = m[1] || '';
+    const target = weekMap[m[2]];
+    const now = new Date();
+    let delta = target - now.getDay();
+
+    if (prefix === '下') {
+      if (delta <= 0) delta += 7;
+    } else if (prefix === '下下') {
+      delta += 14;
+    } else if (prefix === '上') {
+      if (delta >= 0) delta -= 7;
+    } else if (prefix !== '本' && prefix !== '这') {
+      if (delta < 0) delta += 7;      // 光说「周三」= 往后最近的那个周三
+    }
+
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + delta);
+    return makeDateStr(d.getFullYear(), d.getMonth() + 1, d.getDate());
+  }
 
   // 前后都不能紧挨着数字或冒号 —— 否则 "16:40-18:10" 这种时间段
   // 会被当成「40 月 18 日」，塞进日期框后被浏览器拒收，界面上就显示 NaN。
@@ -4605,8 +4654,362 @@ function initSearch() {
     box.focus();
   });
 }
+/* ---------- ⑪ 从微信聊天记录里找活动 ---------- */
+
+const WX_MAX_CHARS = 18000;      // 一次最多扫这么多字，控制 AI 花费
+const WX_CHUNK_CHARS = 3000;     // 发给 AI 的每段长度
+const WX_DEMO = [
+  '2026-10-20 09:12:03 班长',
+  '【通知】本周三下午三点职业规划讲座，地点三教201，请提前十分钟签到。',
+  '',
+  '2026-10-20 09:15:41 学习委员',
+  '大家注意：10月25日19:00 学院辩论赛报名截止，要参加的私聊我。',
+  '',
+  '2026-10-21 08:30:00 团支书',
+  '下周一前交二轮考核材料，电子版发我邮箱。'
+].join('\n');
+
+/** 把聊天记录切成一条条消息（认「2026-10-20 09:12」这种时间行） */
+function splitChatMessages(text) {
+  const lines = String(text || '').split(/\r?\n/);
+  const timeRe = /^\s*\d{2,4}[-/年]\d{1,2}[-/月]\d{1,2}日?(\s+\d{1,2}:\d{2}(:\d{2})?)?/;
+  const out = [];
+  let cur = '';
+
+  lines.forEach(line => {
+    if (timeRe.test(line) && cur.trim()) {
+      out.push(cur.trim());
+      cur = line + '\n';
+    } else {
+      cur += line + '\n';
+    }
+  });
+  if (cur.trim()) out.push(cur.trim());
+
+  return out.length ? out : [String(text || '')];
+}
+
+/** 按字数把消息打包，别一段太长 */
+function chunkMessages(messages, size) {
+  const chunks = [];
+  let cur = '';
+  messages.forEach(m => {
+    if (cur && cur.length + m.length > size) {
+      chunks.push(cur);
+      cur = '';
+    }
+    cur += m + '\n\n';
+  });
+  if (cur.trim()) chunks.push(cur);
+  return chunks.slice(0, 6);
+}
+
+/** 让 AI 从一段聊天里挑活动；失败就抛出去，由调用方退回规则 */
+async function askAiForActivities(chunkText) {
+  const today = todayStr();
+  const system = [
+    '你是一个校园活动助理。下面是一段微信聊天记录，请找出里面提到的**校园活动**（讲座、比赛、招新、报名、体测、会议、截止日期等）。',
+    '今天是 ' + today + '。',
+    '只输出一个 JSON 数组，不要 Markdown 代码块，不要解释。每个元素：',
+    '{"title":"活动名","date":"YYYY-MM-DD","startTime":"HH:MM","endTime":"HH:MM","tag":"类别"}',
+    '规则：',
+    '- 类别只能从这些里选：' + tags.join('、') + '；都不像就用「未分类」。',
+    '- 日期写成 YYYY-MM-DD；没说年份按今年；「下周一」这种按今天推算。',
+    '- 时间没提就留空字符串；拿不准的字段一律留空，绝不编。',
+    '- 同一件事只说一次，不要重复。',
+    '- 没有活动就输出 []。'
+  ].join('\n');
+
+  const out = await aiAskOnce(system, chunkText, 1200);
+  const raw = String(out).trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
+
+  let arr = null;
+  const m = raw.match(/\[[\s\S]*\]/);
+  if (m) {
+    try { arr = JSON.parse(m[0]); } catch (err) { arr = null; }
+  }
+  if (!Array.isArray(arr)) return [];
+
+  return arr.slice(0, 12).map(item => {
+    if (!item || typeof item !== 'object') return null;
+    const title = typeof item.title === 'string' ? item.title.trim().slice(0, 50) : '';
+    const date = typeof item.date === 'string' && isValidDateStr(item.date) ? item.date : '';
+    if (!title || !date) return null;
+    return {
+      title: title,
+      date: date,
+      startTime: /^\d{2}:\d{2}$/.test(String(item.startTime || '')) ? item.startTime : '',
+      endTime: /^\d{2}:\d{2}$/.test(String(item.endTime || '')) ? item.endTime : '',
+      tag: tags.indexOf(item.tag) !== -1 ? item.tag : '未分类'
+    };
+  }).filter(Boolean);
+}
+
+function dedupeActivities(list) {
+  const seen = new Set();
+  const out = [];
+  list.forEach(a => {
+    const key = a.title + '|' + a.date + '|' + (a.startTime || '');
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(a);
+  });
+  return out;
+}
+
+/** 去掉消息开头的「时间 发送人」行，只留正文 */
+function messageBody(msg) {
+  const lines = String(msg || '').split(/\r?\n/);
+  if (lines.length && /^\s*\d{2,4}[-/年]\d{1,2}[-/月]\d{1,2}/.test(lines[0])) lines.shift();
+  if (lines.length && lines[0].trim().length <= 12 && !/[，。！？,.!?]/.test(lines[0])) lines.shift();
+  return lines.join('\n').trim();
+}
+
+/** 扫聊天记录：配了 AI 用 AI，没配就退回规则 */
+async function scanChatForActivities(raw) {
+  const text = String(raw || '').slice(0, WX_MAX_CHARS);
+  const messages = splitChatMessages(text);
+
+  if (aiReady()) {
+    const chunks = chunkMessages(messages, WX_CHUNK_CHARS);
+    const found = [];
+    let lastErr = null;
+    for (let i = 0; i < chunks.length; i++) {
+      try {
+        const list = await askAiForActivities(chunks[i]);
+        list.forEach(a => found.push(a));
+      } catch (err) {
+        lastErr = err;
+        break;
+      }
+    }
+    if (found.length || !lastErr) return dedupeActivities(found);
+    throw lastErr;          // AI 完全失败，交给调用方提示
+  }
+
+  const found = [];
+  messages.forEach(m => {
+    const body = messageBody(m);
+    if (!body) return;
+
+    // 整段先试一次；不行就逐行试（有的记录一条消息里只有一行）
+    let p = parseActivityText(body);
+    if (!(p && p.title && p.date)) {
+      body.split(/\r?\n/).forEach(line => {
+        const q = parseActivityText(line);
+        if (q && q.title && q.date && !(p && p.date)) p = q;
+      });
+    }
+    if (p && p.title && p.date) found.push(p);
+  });
+  return dedupeActivities(found);
+}
+
+function openWechat() {
+  openTool('从微信聊天记录找活动', body => {
+    const state = { raw: '', name: '', candidates: [] };
+
+    const note = document.createElement('p');
+    note.className = 'tool-note';
+    note.textContent = '把导出的聊天记录拖进来，或直接粘贴。文件只在你的浏览器里读，不会自动上传；如果你配了 AI，只有被扫描的那段文字会发给你的 AI 服务商。';
+    body.appendChild(note);
+
+    const row = document.createElement('div');
+    row.className = 'tool-row';
+
+    const pick = document.createElement('button');
+    pick.type = 'button';
+    pick.className = 'btn-primary';
+    pick.textContent = '选择聊天记录文件';
+
+    const file = document.createElement('input');
+    file.type = 'file';
+    file.accept = '.txt,.json,.csv,.html,.md,.log,text/plain';
+    file.hidden = true;
+
+    const demo = document.createElement('button');
+    demo.type = 'button';
+    demo.className = 'btn-ghost';
+    demo.textContent = '看一段示例';
+
+    row.append(pick, demo, file);
+    body.appendChild(row);
+
+    const info = document.createElement('p');
+    info.className = 'wx-info';
+    body.appendChild(info);
+
+    const paste = document.createElement('textarea');
+    paste.id = 'wx-paste';
+    paste.rows = 4;
+    paste.placeholder = '或者把聊天记录粘贴到这里…';
+    body.appendChild(paste);
+
+    const actions = document.createElement('div');
+    actions.className = 'tool-row';
+    const scan = document.createElement('button');
+    scan.type = 'button';
+    scan.className = 'btn-primary';
+    scan.textContent = '开始查找';
+    actions.appendChild(scan);
+    body.appendChild(actions);
+
+    const results = document.createElement('div');
+    body.appendChild(results);
+
+    function setRaw(text, name) {
+      state.raw = text;
+      state.name = name || '';
+      info.textContent = name
+        ? '已读入 ' + name + '（' + text.length + ' 字）'
+        : (text ? '已读入 ' + text.length + ' 字' : '');
+    }
+
+    pick.addEventListener('click', () => { file.value = ''; file.click(); });
+    file.addEventListener('change', () => {
+      const f = file.files && file.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => { setRaw(String(reader.result || ''), f.name); paste.value = ''; };
+      reader.readAsText(f);
+    });
+
+    demo.addEventListener('click', () => {
+      paste.value = WX_DEMO;
+      setRaw(WX_DEMO, '示例聊天记录');
+    });
+
+    paste.addEventListener('input', () => {
+      if (paste.value.trim()) setRaw(paste.value, '');
+    });
+
+    scan.addEventListener('click', async () => {
+      const raw = paste.value.trim() || state.raw;
+      if (!raw.trim()) {
+        info.textContent = '先选一个文件，或者把聊天记录粘贴进来。';
+        return;
+      }
+
+      scan.disabled = true;
+      scan.textContent = '查找中…';
+      results.innerHTML = '';
+
+      try {
+        const list = await scanChatForActivities(raw);
+        scan.disabled = false;
+        scan.textContent = '开始查找';
+
+        if (!list.length) {
+          const none = document.createElement('p');
+          none.className = 'tool-note';
+          none.textContent = '没找到能记的活动。可以换一段记录，或者在聊天里把时间说清楚一点。';
+          results.appendChild(none);
+          return;
+        }
+
+        renderWxCandidates(results, list);
+      } catch (err) {
+        scan.disabled = false;
+        scan.textContent = '开始查找';
+        const tip = document.createElement('p');
+        tip.className = 'tool-note';
+        tip.textContent = 'AI 没连上（' + err.message + '），可以再试一次，或者清掉 AI 设置用本机规则。';
+        results.appendChild(tip);
+      }
+    });
+  });
+}
+
+/** 找到的候选活动：逐条勾选 / 全部记入 */
+function renderWxCandidates(box, list) {
+  box.innerHTML = '';
+
+  const head = document.createElement('p');
+  head.className = 'tool-note';
+  head.textContent = '找到 ' + list.length + ' 条可能的安排，勾选要记入的：';
+  box.appendChild(head);
+
+  const ul = document.createElement('div');
+  ul.className = 'wx-list';
+
+  const checks = [];
+  list.forEach(a => {
+    const row = document.createElement('label');
+    row.className = 'wx-item';
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = true;
+    cb.dataset.idx = String(checks.length);
+
+    const main = document.createElement('span');
+    main.className = 'wx-main';
+    const title = document.createElement('strong');
+    title.textContent = a.title;
+    const meta = document.createElement('span');
+    meta.className = 'wx-meta';
+    meta.textContent = formatDateCN(a.date) + ' ' +
+      (a.startTime ? a.startTime + (a.endTime ? '–' + a.endTime : '') : '全天') +
+      (a.tag ? ' · #' + a.tag : '');
+    main.append(title, meta);
+
+    row.append(cb, main);
+    ul.appendChild(row);
+    checks.push(cb);
+  });
+  box.appendChild(ul);
+
+  const actions = document.createElement('div');
+  actions.className = 'tool-row';
+
+  const saveAll = document.createElement('button');
+  saveAll.type = 'button';
+  saveAll.className = 'btn-primary';
+  saveAll.textContent = '全部记入';
+  saveAll.addEventListener('click', () => commitWx(list));
+
+  const saveChecked = document.createElement('button');
+  saveChecked.type = 'button';
+  saveChecked.className = 'btn-ghost';
+  saveChecked.textContent = '只记勾选的';
+  saveChecked.addEventListener('click', () => {
+    const picked = list.filter((_, i) => checks[i] && checks[i].checked);
+    if (!picked.length) {
+      showBanner('一条都没勾选');
+      return;
+    }
+    commitWx(picked);
+  });
+
+  const none = document.createElement('button');
+  none.type = 'button';
+  none.className = 'btn-ghost';
+  none.textContent = '都不记';
+  none.addEventListener('click', closeTool);
+
+  actions.append(saveAll, saveChecked, none);
+  box.appendChild(actions);
+}
+
+function commitWx(list) {
+  const saved = saveBatch(list, 'new');
+  const items = saved && Array.isArray(saved.items) ? saved.items : [];
+  const created = items.filter(x => x.kind === 'created').length;
+  const dup = items.filter(x => x.kind === 'duplicate').length;
+
+  renderAll();
+  closeTool();
+
+  showBanner('记入 ' + created + ' 条' + (dup ? '，另有 ' + dup + ' 条列表里已经有了' : ''));
+}
+function initWechat() {
+  const btn = document.getElementById('btn-wechat');
+  if (btn) btn.addEventListener('click', openWechat);
+}
+
 initTools();
 initAlert();
 initTheme();
 initSearch();
+initWechat();
 init();
