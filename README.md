@@ -1,7 +1,7 @@
 ﻿# 活动小本本
 
 把校园活动录进网页，用**日历**和**列表**两种方式查看，一眼看出哪天有事、哪些还没做完；纯前端、免注册、**双击 `index.html` 就能用**。
-> **仓库**：https://github.com/13411800136/campus-notebook （镜像：https://github.com/13411800136/idontno） ｜ **在线体验**：https://13411800136.github.io/campus-notebook/
+> **仓库**：https://github.com/13411800136/idontno ｜ **在线体验**：https://13411800136.github.io/idontno/
 > 仓库里包含全部源码（`index.html` / `style.css` / `desktop-theme.css` / `script.js` / `desktop-bg.js` / `desktop-bg/`）和三份核心文档：**README.md、PRD.md、AGENTS.md**。
 
 ## 这是什么
