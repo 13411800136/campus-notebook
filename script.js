@@ -431,6 +431,44 @@ function buildCard(ev, diff) {
   return card;
 }
 
+/** 一条活动能被哪些写法搜到（日期要支持「10-25」「10月25」「2026/10/25」） */
+function searchForms(ev) {
+  const [y, m, d] = ev.date.split('-');
+  const forms = [
+    ev.date,
+    y + '/' + m + '/' + d,
+    (+m) + '月' + (+d) + '日',
+    (+m) + '月' + (+d),
+    (+m) + '-' + (+d),
+    (+m) + '/' + (+d),
+    m + d,
+    y
+  ];
+  return forms.join(' ').toLowerCase();
+}
+
+/** 这条活动能不能匹配搜索词：多个词是「都要有」的关系 */
+function matchesSearch(ev, query) {
+  const q = String(query || '').trim().toLowerCase();
+  if (!q) return true;
+
+  const tokens = q.split(/\s+/).filter(Boolean);
+  if (!tokens.length) return true;
+
+  const hay = [
+    ev.title,
+    ev.note,
+    ev.tag,
+    ev.startTime,
+    ev.endTime,
+    STATUS_LABEL[statusOf(ev)]
+  ].filter(Boolean).join(' ').toLowerCase();
+
+  const dates = searchForms(ev);
+
+  return tokens.every(t => hay.indexOf(t) !== -1 || dates.indexOf(t) !== -1);
+}
+
 /** 渲染列表：按当前视图分「待办」和「历史」两套 */
 function renderList() {
   const box = document.getElementById('list');
@@ -439,10 +477,11 @@ function renderList() {
   // 时间撞车先算一遍，卡片上要用
   conflictMap = findConflicts(events);
 
-  // 两个筛选条件叠加：类别（上面那排按钮）+ 某一天（在日历上点出来的）
+  // 三个筛选条件叠加：类别（上面那排按钮）+ 某一天（日历点出来的）+ 搜索框
   const shown = events
     .filter(e => currentFilter === '全部' || e.tag === currentFilter)
-    .filter(e => dayFilter === '' || e.date === dayFilter);
+    .filter(e => dayFilter === '' || e.date === dayFilter)
+    .filter(e => matchesSearch(e, searchQuery));
 
   // 同一天里再按时间排；没填时间的（'99:99'）排最后
   const timeKey = e => e.startTime || '99:99';
@@ -462,7 +501,8 @@ function renderActive(box, shown, timeAsc) {
     .filter(e => statusOf(e) !== 'done' && daysFromToday(e.date) >= 0)
     .sort((a, b) => a.date.localeCompare(b.date) || timeAsc(a, b) || a.createdAt - b.createdAt);
 
-  document.getElementById('filter-count').textContent = `当前 ${todo.length} 条`;
+  document.getElementById('filter-count').textContent =
+    `当前 ${todo.length} 条` + (searchQuery.trim() ? `（搜「${searchQuery.trim()}」）` : '');
 
   if (todo.length === 0) {
     const empty = document.createElement('div');
@@ -477,6 +517,25 @@ function renderActive(box, shown, timeAsc) {
       strong.textContent = '还没有任何活动';
       tip.textContent = '在上面记一条，或者点「载入示例数据」看看效果。';
       empty.append(strong, tip);
+    } else if (searchQuery.trim() !== '') {
+      // 空状态 B0：搜索没结果
+      strong.textContent = `没搜到「${searchQuery.trim()}」`;
+      tip.textContent = `全部里一共有 ${events.length} 条，换个词试试（名称、备注、类别、日期都能搜）。`;
+
+      const clear = document.createElement('button');
+      clear.type = 'button';
+      clear.className = 'btn-ghost';
+      clear.textContent = '清空搜索';
+      clear.addEventListener('click', () => {
+        searchQuery = '';
+        const box = document.getElementById('search-input');
+        if (box) box.value = '';
+        const x = document.getElementById('search-clear');
+        if (x) x.hidden = true;
+        renderAll();
+      });
+
+      empty.append(strong, tip, clear);
     } else if (dayFilter !== '' || currentFilter !== '全部') {
       // 空状态 B：当前筛选下没有
       strong.textContent = dayFilter !== ''
@@ -533,10 +592,12 @@ function renderHistory(box, shown, timeDesc) {
   const removed = deleted
     .filter(e => currentFilter === '全部' || e.tag === currentFilter)
     .filter(e => dayFilter === '' || e.date === dayFilter)
+    .filter(e => matchesSearch(e, searchQuery))
     .sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0));
 
   const total = done.length + expired.length + removed.length;
-  document.getElementById('filter-count').textContent = `历史 ${total} 条`;
+  document.getElementById('filter-count').textContent =
+    `历史 ${total} 条` + (searchQuery.trim() ? `（搜「${searchQuery.trim()}」）` : '');
 
   if (total === 0) {
     const empty = document.createElement('div');
@@ -1949,6 +2010,22 @@ function renderChat() {
       renderOpsBlock(bubble, msg);
     }
 
+    // 网络这边出错时给个「重试」，不用重新打字
+    if (msg.retryText) {
+      bubble.classList.add('chat-failed');
+      const retry = document.createElement('button');
+      retry.type = 'button';
+      retry.className = 'btn-ghost chat-retry';
+      retry.textContent = '重试';
+      retry.addEventListener('click', () => {
+        const input = document.getElementById('chat-text');
+        if (!input) return;
+        input.value = msg.retryText;
+        document.getElementById('chat-send').click();
+      });
+      bubble.appendChild(retry);
+    }
+
     row.appendChild(bubble);
     log.appendChild(row);
   });
@@ -2046,7 +2123,9 @@ async function askAI(text, imageDataUrl, label) {
         text: '刚才没连上 AI（' + failReason + '），我先用本机规则看了看：',
         source: '规则识别（AI 调用失败）',
         sourceText: text,
-        action: 'new'
+        action: 'new',
+        retryText: text,
+        failed: true
       });
       return;
     }
@@ -2411,7 +2490,9 @@ function deliverParsed(list, opts) {
     parsed: acts[0] || null,
     parsedList: acts,
     source: opts.source || '',
-    sourceText: opts.sourceText || ''
+    sourceText: opts.sourceText || '',
+    retryText: opts.retryText || '',
+    failed: !!opts.failed
   };
 
   if (acts.length) {
@@ -3091,6 +3172,16 @@ function validateForm() {
     dateBox.classList.add('invalid');
     dateErr.textContent = '请选择活动日期';
     firstBad = firstBad || dateBox;
+  } else {
+    // 日期兜底：正常用日期选择器不会出错，但手改 value / 粘贴进来时
+    // 可能是 2026-13-45 这种明显不存在的日期
+    const ymd = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateBox.value);
+    const year = ymd ? Number(ymd[1]) : 0;
+    if (!ymd || year < 2000 || year > 2100) {
+      dateBox.classList.add('invalid');
+      dateErr.textContent = '这个日期不太对（支持 2000–2100 年）';
+      firstBad = firstBad || dateBox;
+    }
   }
 
   // 时间：整体可以不填（= 全天）。填了结束时间就必须有开始时间，
@@ -3116,10 +3207,57 @@ function validateForm() {
   return true;
 }
 
+/** 「已经有一条一模一样的了」：给出可见提示，并留一个「仍然要存」的出口 */
+function showDupWarning(ev) {
+  const box = document.getElementById('dup-warning');
+  if (!box) return;
+
+  box.hidden = false;
+  box.textContent = '';
+
+  const text = document.createElement('span');
+  text.className = 'dup-text';
+  text.textContent = '已经有一条一样的了：' + formatDateCN(ev.date) + ' ' +
+    (ev.startTime || '全天') + ' · ' + ev.title + '。';
+
+  const again = document.createElement('button');
+  again.type = 'button';
+  again.className = 'dup-again';
+  again.textContent = '仍然要存';
+  again.addEventListener('click', () => {
+    allowDupOnce = true;
+    const form = document.getElementById('event-form');
+    if (form) form.requestSubmit();
+  });
+
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.className = 'dup-cancel';
+  cancel.textContent = '算了';
+  cancel.addEventListener('click', hideDupWarning);
+
+  box.append(text, again, cancel);
+  if (typeof box.scrollIntoView === 'function') box.scrollIntoView({ block: 'nearest' });
+}
+
+function hideDupWarning() {
+  const box = document.getElementById('dup-warning');
+  if (!box) return;
+  box.hidden = true;
+  box.textContent = '';
+}
+
 /** 点「存一条」或「保存修改」——两种情况走同一个出口 */
 function handleSubmit(e) {
   e.preventDefault();
+
+  // 连点两次 / 回车重复提交：600ms 内只认第一下
+  if (saveLock) return;
+
   if (!validateForm()) return;
+
+  saveLock = true;
+  setTimeout(() => { saveLock = false; }, 600);
 
   const titleBox = document.getElementById('input-title');
   const dateBox = document.getElementById('input-date');
@@ -3130,6 +3268,22 @@ function handleSubmit(e) {
   const remindMin = remindBox ? Number(remindBox.value) : 0;
 
   const wasEditing = editingId !== null;
+
+  // 一模一样的一条已经存在：不静默吞掉，也不直接存，给个可见的提示
+  if (!wasEditing && !allowDupOnce) {
+    const dup = events.find(x =>
+      x.title === titleBox.value.trim() &&
+      x.date === dateBox.value &&
+      (x.startTime || '') === startBox.value);
+    if (dup) {
+      saveLock = false;
+      showDupWarning(dup);
+      return;
+    }
+  }
+  allowDupOnce = false;
+  hideDupWarning();
+
   let savedId = null;
 
   if (wasEditing) {
@@ -3772,6 +3926,11 @@ let undoTimer = null;
 // 正在编辑哪一条。null = 不在编辑状态，表单就是普通的「新增一条」
 let editingId = null;
 
+// 防连点：600ms 内只认第一次提交（网络慢、手抖连按都靠它挡）
+let saveLock = false;
+// 用户点了「仍然要存」之后，放开一次查重
+let allowDupOnce = false;
+
 // 这一轮渲染里，哪些活动和别的活动时间撞车了（id → 撞上的那几条）
 var conflictMap = new Map();
 
@@ -3787,6 +3946,9 @@ let calSelected = '';
 // 注意：打开页面时日历虽然高亮今天，但 dayFilter 是空的——
 // 否则你一进来就只看见今天那一条，会以为数据丢了。
 let dayFilter = '';
+
+// 搜索框里的关键词（名称/备注/类别/日期都能搜）
+let searchQuery = '';
 
 function init() {
   events = loadEvents();
@@ -4380,6 +4542,71 @@ function initTools() {
   });
 }
 
+/* ---------- ⑨ 深浅色 / 搜索框 ---------- */
+
+const THEME_KEY = 'campus_theme_v1';
+
+/** 把主题落到 <html data-theme>，按钮图标跟着变 */
+function applyTheme(mode) {
+  const root = document.documentElement;
+  if (mode === 'dark' || mode === 'light') root.setAttribute('data-theme', mode);
+  else root.removeAttribute('data-theme');
+
+  const btn = document.getElementById('btn-theme');
+  if (btn) {
+    btn.textContent = mode === 'dark' ? '☀️' : '🌙';
+    btn.title = mode === 'dark' ? '切到浅色' : '切到深色';
+  }
+}
+
+function initTheme() {
+  let saved = '';
+  try { saved = localStorage.getItem(THEME_KEY) || ''; } catch (err) { /* 忽略 */ }
+
+  // 没手动选过就跟着系统走
+  const prefersDark = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  const mode = (saved === 'dark' || saved === 'light') ? saved : (prefersDark ? 'dark' : 'light');
+  applyTheme(mode);
+
+  const btn = document.getElementById('btn-theme');
+  if (!btn) return;
+
+  btn.addEventListener('click', () => {
+    const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    try { localStorage.setItem(THEME_KEY, next); } catch (err) { /* 忽略 */ }
+    applyTheme(next);
+  });
+}
+
+function initSearch() {
+  const box = document.getElementById('search-input');
+  const clear = document.getElementById('search-clear');
+  if (!box || !clear) return;
+
+  const sync = () => {
+    searchQuery = box.value;
+    clear.hidden = !box.value;
+    renderList();
+  };
+
+  box.addEventListener('input', sync);
+
+  box.addEventListener('keydown', ev => {
+    if (ev.key === 'Escape') {
+      ev.preventDefault();
+      box.value = '';
+      sync();
+    }
+  });
+
+  clear.addEventListener('click', () => {
+    box.value = '';
+    sync();
+    box.focus();
+  });
+}
 initTools();
 initAlert();
+initTheme();
+initSearch();
 init();

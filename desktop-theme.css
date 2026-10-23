@@ -1045,3 +1045,370 @@ body {
   .alert-dialog,
   .alert-icon { animation: none; }
 }
+
+/* ==========================================================
+ * ⑪ 搜索 / 重复提交提示 / 失败重试 / 深浅色
+ * ========================================================== */
+
+.search-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin: 10px 0 8px;
+}
+
+.search-icon {
+  position: absolute;
+  left: 10px;
+  font-size: 12px;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.search-input {
+  flex: 1 1 auto;
+  width: 100%;
+  padding: 8px 30px 8px 28px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  box-shadow: inset 0 1px 2px rgba(62, 52, 36, 0.04);
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: rgba(111, 140, 107, 0.55);
+  box-shadow: 0 0 0 3px rgba(111, 140, 107, 0.14);
+}
+
+.search-input::placeholder { color: var(--muted); }
+
+.search-clear {
+  position: absolute;
+  right: 8px;
+  padding: 2px 5px;
+  font-size: 12px;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.search-clear:hover { color: var(--ink); }
+
+/* 重复提交 / 已经有一条一样的 */
+.dup-warning {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 9px 12px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #8a5a2c;
+  background: rgba(252, 238, 224, 0.95);
+  border: 1px solid rgba(176, 118, 62, 0.28);
+  border-radius: 10px;
+}
+
+.dup-warning[hidden] { display: none; }
+
+.dup-text { flex: 1 1 auto; min-width: 180px; }
+
+.dup-again,
+.dup-cancel {
+  padding: 3px 10px;
+  font-size: 12px;
+  color: #8a5a2c;
+  background: #fffdf8;
+  border: 1px solid rgba(176, 118, 62, 0.35);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.dup-again:hover,
+.dup-cancel:hover { background: #fdf6ec; }
+
+/* 网络失败的气泡 + 重试 */
+.chat-failed .chat-text { color: #8a4a2c; }
+
+.chat-retry {
+  margin-top: 6px;
+  padding: 4px 12px;
+  font-size: 12px;
+  border-radius: 9px;
+}
+
+/* ---------- 深色模式 ---------- */
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+
+  --paper: #0f1216;
+  --card: #1a1e24;
+  --glass: rgba(24, 28, 34, 0.94);
+  --glass-soft: rgba(28, 33, 39, 0.9);
+
+  --ink: #ece7dc;
+  --muted: #a39c8e;
+  --line: #343a43;
+  --hairline: rgba(255, 255, 255, 0.13);
+
+  --accent: #93b78c;
+  --accent-soft: rgba(147, 183, 140, 0.16);
+  --acid: #2b3138;
+  --blue: #93b78c;
+  --pink: #c78d6b;
+  --danger: #cf9271;
+  --warn: #d9b57a;
+  --warn-soft: rgba(217, 181, 122, 0.14);
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-2: 0 8px 20px rgba(0, 0, 0, 0.5);
+  --shadow-3: 0 20px 44px rgba(0, 0, 0, 0.55);
+  --shadow-4: 0 46px 90px rgba(0, 0, 0, 0.6);
+}
+
+html[data-theme="dark"] body { background: #0b0d10; }
+
+html[data-theme="dark"] #desk-bg .desk-bg-veil {
+  background:
+    radial-gradient(115% 85% at 50% 8%, rgba(6, 7, 9, 0) 0%, rgba(6, 7, 9, 0.42) 58%, rgba(4, 5, 7, 0.74) 100%),
+    linear-gradient(180deg, rgba(6, 7, 9, 0.5) 0%, rgba(6, 7, 9, 0.16) 34%, rgba(4, 5, 7, 0.55) 100%);
+}
+
+/* 这些地方原本写死了浅色底，深色模式下统一压暗 */
+html[data-theme="dark"] .card,
+html[data-theme="dark"] .chat-log,
+html[data-theme="dark"] .chat-parsed,
+html[data-theme="dark"] .chat-think-body,
+html[data-theme="dark"] .confirm-row,
+html[data-theme="dark"] .op-row,
+html[data-theme="dark"] .stat-card,
+html[data-theme="dark"] .tool-text,
+html[data-theme="dark"] .cal-cell,
+html[data-theme="dark"] .dialog,
+html[data-theme="dark"] .search-input,
+html[data-theme="dark"] input,
+html[data-theme="dark"] textarea,
+html[data-theme="dark"] select,
+html[data-theme="dark"] .btn-ghost,
+html[data-theme="dark"] .filter,
+html[data-theme="dark"] .list-tab,
+html[data-theme="dark"] .card-tag,
+html[data-theme="dark"] .day-chip,
+html[data-theme="dark"] .reminder-bar {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.055);
+  border-color: var(--hairline);
+}
+
+html[data-theme="dark"] .btn-ghost:hover,
+html[data-theme="dark"] .filter:hover,
+html[data-theme="dark"] .filter.active {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+html[data-theme="dark"] .btn-primary {
+  background: linear-gradient(180deg, #7fa077, #67865f);
+  border-color: rgba(120, 150, 112, 0.45);
+}
+
+html[data-theme="dark"] .card.done {
+  background: linear-gradient(180deg, rgba(46, 60, 44, 0.92), rgba(28, 34, 30, 0.92));
+}
+
+html[data-theme="dark"] .card.past {
+  background: linear-gradient(180deg, rgba(66, 50, 34, 0.92), rgba(34, 30, 26, 0.92));
+}
+
+html[data-theme="dark"] .card.deleted {
+  background: rgba(28, 31, 35, 0.85);
+}
+
+html[data-theme="dark"] .overdue-hint {
+  color: #e9bd91;
+  background: linear-gradient(180deg, rgba(66, 50, 34, 0.9), rgba(46, 37, 28, 0.9));
+  border-color: rgba(200, 140, 90, 0.32);
+}
+
+html[data-theme="dark"] .alert-dialog {
+  background: linear-gradient(180deg, #1d222a, #171b21);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+html[data-theme="dark"] .dup-warning {
+  color: #e9bd91;
+  background: rgba(66, 50, 34, 0.9);
+  border-color: rgba(200, 140, 90, 0.32);
+}
+
+html[data-theme="dark"] .dup-again,
+html[data-theme="dark"] .dup-cancel {
+  color: #e9bd91;
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(200, 140, 90, 0.35);
+}
+
+html[data-theme="dark"] .empty-tip,
+html[data-theme="dark"] .hint,
+html[data-theme="dark"] .filter-count,
+html[data-theme="dark"] .card-meta,
+html[data-theme="dark"] .card-note {
+  color: var(--muted);
+}
+
+html[data-theme="dark"] .chat-text { color: var(--ink); }
+
+/* 深色模式第二轮：这些地方原本写死了浅色渐变/白色底 */
+html[data-theme="dark"] .topbar {
+  background-image: linear-gradient(180deg, rgba(32, 36, 43, 0.96), rgba(25, 29, 35, 0.92));
+  border-bottom-color: rgba(255, 255, 255, 0.12);
+}
+
+html[data-theme="dark"] .field input,
+html[data-theme="dark"] .field textarea,
+html[data-theme="dark"] #ai-base,
+html[data-theme="dark"] #ai-model,
+html[data-theme="dark"] #ai-key,
+html[data-theme="dark"] #ai-confirm,
+html[data-theme="dark"] #input-remind {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ink);
+  border-color: var(--hairline);
+}
+
+html[data-theme="dark"] .list-tabs {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--hairline);
+}
+
+html[data-theme="dark"] .list-tab {
+  background: transparent;
+  color: rgba(236, 231, 220, 0.72);
+}
+
+html[data-theme="dark"] .list-tab.active {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--ink);
+}
+
+html[data-theme="dark"] .chat-msg.from-ai .chat-bubble {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--ink);
+}
+
+html[data-theme="dark"] .chat-msg.from-user .chat-bubble {
+  background: rgba(147, 183, 140, 0.22);
+  color: var(--ink);
+}
+
+html[data-theme="dark"] .chat-parsed {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--ink);
+}
+
+html[data-theme="dark"] .chat-input,
+html[data-theme="dark"] #chat-text {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ink);
+}
+
+html[data-theme="dark"] .reminder-bar {
+  background: rgba(32, 36, 43, 0.96);
+  color: var(--ink);
+}
+
+html[data-theme="dark"] .status-btn {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--ink);
+  border-color: var(--hairline);
+}
+
+html[data-theme="dark"] .status-btn.status-done {
+  background: rgba(147, 183, 140, 0.2);
+  color: #cfe3c8;
+}
+
+/* ---------- ⑫ 手机端收尾 ---------- */
+
+@media (max-width: 640px) {
+  /* 3D 背景在手机上很吃电，直接换成纯色底 */
+  #desk-bg { display: none; }
+  #desk-bg .desk-bg-veil { display: none; }
+
+  body { background: #f0ede3; }
+  html[data-theme="dark"] body { background: #0b0d10; }
+
+  /* 顶栏按钮小一点，别把标题挤下去 */
+  .topbar { padding: 12px 14px; }
+  .topbar h1 { font-size: 14px; letter-spacing: 0.1em; }
+  .topbar .stats { font-size: 11.5px; }
+  .topbar-tools { gap: 8px; }
+  .topbar .link-btn { font-size: 12px; }
+
+  .panel { border-radius: 14px; padding: 14px; }
+  .wrap { padding: 0 12px; }
+
+  /* 聊天区别占满整屏 */
+  #chat-log { max-height: 40vh; }
+
+  .card { padding: 12px; }
+  .card-btns { gap: 6px; }
+  .search-input { font-size: 14px; }   /* 避免 iOS 聚焦时自动放大 */
+  .field input, .field textarea, #chat-text { font-size: 16px; }
+
+  .alert-dialog { padding: 20px 16px 14px; }
+  .tool-dialog { max-width: 100%; }
+}
+
+/* 深色下的小标题胶囊（原本是浅色底 + 深色字，会看不见） */
+html[data-theme="dark"] .panel > h2 {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ink);
+  border-color: var(--hairline);
+}
+
+/* 手机端顶栏：标题 / 统计 / 工具 各占一行，别挤成三列 */
+@media (max-width: 640px) {
+  .topbar {
+    flex-wrap: wrap;
+    row-gap: 6px;
+    align-items: flex-start;
+  }
+
+  .topbar h1 {
+    order: 1;
+    flex: 1 1 auto;
+  }
+
+  .topbar .stats {
+    order: 3;
+    flex: 1 1 100%;
+    margin: 0;
+    font-size: 11.5px;
+    line-height: 1.5;
+  }
+
+  .topbar-tools {
+    order: 2;
+    flex: 0 0 auto;
+    gap: 8px;
+  }
+
+  .topbar-tools .link-btn {
+    padding: 2px 4px;
+  }
+}
+
+html[data-theme="dark"] .topbar .stats {
+  color: rgba(236, 231, 220, 0.72);
+}
+
+html[data-theme="dark"] .topbar h1 {
+  color: var(--ink);
+}
