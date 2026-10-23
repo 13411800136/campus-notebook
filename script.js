@@ -1,4 +1,4 @@
-﻿/* =========================================================
+/* =========================================================
    活动小本本 · 逻辑
    代码分六段，从上往下读：
      ① 常量        ② 日期工具      ③ 数据读写
@@ -3919,16 +3919,38 @@ function initNotifyButton() {
   if (typeof Notification === 'undefined') return;      // 浏览器不支持，当没这功能
   if (Notification.permission === 'granted') return;    // 已经授权，不用显示
 
+  // file:// 打开时 Edge / Chrome 会直接拒绝通知权限（不会有授权框），
+  // 先在按钮上把原因说清楚，别让人以为是程序坏了
+  if (location.protocol === 'file:') {
+    btn.hidden = false;
+    btn.textContent = '桌面提醒需用 localhost 打开';
+    btn.addEventListener('click', () => {
+      showBanner(
+        '你是双击 index.html 打开的（file://），浏览器规定这种页面不能申请桌面通知，所以会被直接拒绝。' +
+        ' 想在系统通知里收到提醒：在项目文件夹里运行 python -m http.server 8899，' +
+        '然后用浏览器打开 http://localhost:8899/，再点「开启桌面提醒」就会有正常的授权框。' +
+        ' 部署到 https（比如 GitHub Pages）也一样。' +
+        ' 现在就有的提醒：到点弹窗、顶部提示条、标签页标题闪烁、提示音，都不受影响。'
+      );
+      btn.hidden = true;
+    });
+    return;
+  }
+
   // 被拒绝过：浏览器不会再弹授权框了，告诉用户怎么手动开
   if (Notification.permission === 'denied') {
     btn.hidden = false;
     btn.textContent = '桌面通知被拒绝（点这里看怎么办）';
     btn.addEventListener('click', () => {
+      const isFile = location.protocol === 'file:';
       showBanner(
-        '浏览器已拒绝桌面通知，不会再弹授权框。修复办法：点地址栏左边的图标 → 网站权限 → 通知 → 允许；' +
-        '或者 设置 → Cookie 和网站权限 → 通知 → 找到这个网站改成允许。' +
-        '用 file:// 打开时可能根本没有这一项，部署到 https（比如 GitHub Pages）后就正常了。' +
-        '在此之前，到点提醒仍然会用「顶部提示条 + 标题闪烁 + 提示音」提醒你。'
+        (isFile
+          ? '原因：你是用 file:// 打开的这个页面。浏览器规定桌面通知只能在 https 或 localhost 下授权，file:// 一律直接拒绝，没有商量的余地。'
+          : '浏览器已经拒绝过通知权限，不会再弹授权框。') +
+        ' 解决办法：把页面用本地服务打开——在项目文件夹里运行 python -m http.server 8899，' +
+        '然后浏览器访问 http://localhost:8899/，再点「开启桌面提醒」，就会正常弹出授权框；' +
+        '或者部署到 https（比如 GitHub Pages）也一样。' +
+        ' 在那之前，到点弹窗、顶部提示条、标签页标题闪烁、提示音都照常工作，不会漏提醒。'
       );
       btn.hidden = true;
     });
@@ -4654,362 +4676,8 @@ function initSearch() {
     box.focus();
   });
 }
-/* ---------- ⑪ 从微信聊天记录里找活动 ---------- */
-
-const WX_MAX_CHARS = 18000;      // 一次最多扫这么多字，控制 AI 花费
-const WX_CHUNK_CHARS = 3000;     // 发给 AI 的每段长度
-const WX_DEMO = [
-  '2026-10-20 09:12:03 班长',
-  '【通知】本周三下午三点职业规划讲座，地点三教201，请提前十分钟签到。',
-  '',
-  '2026-10-20 09:15:41 学习委员',
-  '大家注意：10月25日19:00 学院辩论赛报名截止，要参加的私聊我。',
-  '',
-  '2026-10-21 08:30:00 团支书',
-  '下周一前交二轮考核材料，电子版发我邮箱。'
-].join('\n');
-
-/** 把聊天记录切成一条条消息（认「2026-10-20 09:12」这种时间行） */
-function splitChatMessages(text) {
-  const lines = String(text || '').split(/\r?\n/);
-  const timeRe = /^\s*\d{2,4}[-/年]\d{1,2}[-/月]\d{1,2}日?(\s+\d{1,2}:\d{2}(:\d{2})?)?/;
-  const out = [];
-  let cur = '';
-
-  lines.forEach(line => {
-    if (timeRe.test(line) && cur.trim()) {
-      out.push(cur.trim());
-      cur = line + '\n';
-    } else {
-      cur += line + '\n';
-    }
-  });
-  if (cur.trim()) out.push(cur.trim());
-
-  return out.length ? out : [String(text || '')];
-}
-
-/** 按字数把消息打包，别一段太长 */
-function chunkMessages(messages, size) {
-  const chunks = [];
-  let cur = '';
-  messages.forEach(m => {
-    if (cur && cur.length + m.length > size) {
-      chunks.push(cur);
-      cur = '';
-    }
-    cur += m + '\n\n';
-  });
-  if (cur.trim()) chunks.push(cur);
-  return chunks.slice(0, 6);
-}
-
-/** 让 AI 从一段聊天里挑活动；失败就抛出去，由调用方退回规则 */
-async function askAiForActivities(chunkText) {
-  const today = todayStr();
-  const system = [
-    '你是一个校园活动助理。下面是一段微信聊天记录，请找出里面提到的**校园活动**（讲座、比赛、招新、报名、体测、会议、截止日期等）。',
-    '今天是 ' + today + '。',
-    '只输出一个 JSON 数组，不要 Markdown 代码块，不要解释。每个元素：',
-    '{"title":"活动名","date":"YYYY-MM-DD","startTime":"HH:MM","endTime":"HH:MM","tag":"类别"}',
-    '规则：',
-    '- 类别只能从这些里选：' + tags.join('、') + '；都不像就用「未分类」。',
-    '- 日期写成 YYYY-MM-DD；没说年份按今年；「下周一」这种按今天推算。',
-    '- 时间没提就留空字符串；拿不准的字段一律留空，绝不编。',
-    '- 同一件事只说一次，不要重复。',
-    '- 没有活动就输出 []。'
-  ].join('\n');
-
-  const out = await aiAskOnce(system, chunkText, 1200);
-  const raw = String(out).trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
-
-  let arr = null;
-  const m = raw.match(/\[[\s\S]*\]/);
-  if (m) {
-    try { arr = JSON.parse(m[0]); } catch (err) { arr = null; }
-  }
-  if (!Array.isArray(arr)) return [];
-
-  return arr.slice(0, 12).map(item => {
-    if (!item || typeof item !== 'object') return null;
-    const title = typeof item.title === 'string' ? item.title.trim().slice(0, 50) : '';
-    const date = typeof item.date === 'string' && isValidDateStr(item.date) ? item.date : '';
-    if (!title || !date) return null;
-    return {
-      title: title,
-      date: date,
-      startTime: /^\d{2}:\d{2}$/.test(String(item.startTime || '')) ? item.startTime : '',
-      endTime: /^\d{2}:\d{2}$/.test(String(item.endTime || '')) ? item.endTime : '',
-      tag: tags.indexOf(item.tag) !== -1 ? item.tag : '未分类'
-    };
-  }).filter(Boolean);
-}
-
-function dedupeActivities(list) {
-  const seen = new Set();
-  const out = [];
-  list.forEach(a => {
-    const key = a.title + '|' + a.date + '|' + (a.startTime || '');
-    if (seen.has(key)) return;
-    seen.add(key);
-    out.push(a);
-  });
-  return out;
-}
-
-/** 去掉消息开头的「时间 发送人」行，只留正文 */
-function messageBody(msg) {
-  const lines = String(msg || '').split(/\r?\n/);
-  if (lines.length && /^\s*\d{2,4}[-/年]\d{1,2}[-/月]\d{1,2}/.test(lines[0])) lines.shift();
-  if (lines.length && lines[0].trim().length <= 12 && !/[，。！？,.!?]/.test(lines[0])) lines.shift();
-  return lines.join('\n').trim();
-}
-
-/** 扫聊天记录：配了 AI 用 AI，没配就退回规则 */
-async function scanChatForActivities(raw) {
-  const text = String(raw || '').slice(0, WX_MAX_CHARS);
-  const messages = splitChatMessages(text);
-
-  if (aiReady()) {
-    const chunks = chunkMessages(messages, WX_CHUNK_CHARS);
-    const found = [];
-    let lastErr = null;
-    for (let i = 0; i < chunks.length; i++) {
-      try {
-        const list = await askAiForActivities(chunks[i]);
-        list.forEach(a => found.push(a));
-      } catch (err) {
-        lastErr = err;
-        break;
-      }
-    }
-    if (found.length || !lastErr) return dedupeActivities(found);
-    throw lastErr;          // AI 完全失败，交给调用方提示
-  }
-
-  const found = [];
-  messages.forEach(m => {
-    const body = messageBody(m);
-    if (!body) return;
-
-    // 整段先试一次；不行就逐行试（有的记录一条消息里只有一行）
-    let p = parseActivityText(body);
-    if (!(p && p.title && p.date)) {
-      body.split(/\r?\n/).forEach(line => {
-        const q = parseActivityText(line);
-        if (q && q.title && q.date && !(p && p.date)) p = q;
-      });
-    }
-    if (p && p.title && p.date) found.push(p);
-  });
-  return dedupeActivities(found);
-}
-
-function openWechat() {
-  openTool('从微信聊天记录找活动', body => {
-    const state = { raw: '', name: '', candidates: [] };
-
-    const note = document.createElement('p');
-    note.className = 'tool-note';
-    note.textContent = '把导出的聊天记录拖进来，或直接粘贴。文件只在你的浏览器里读，不会自动上传；如果你配了 AI，只有被扫描的那段文字会发给你的 AI 服务商。';
-    body.appendChild(note);
-
-    const row = document.createElement('div');
-    row.className = 'tool-row';
-
-    const pick = document.createElement('button');
-    pick.type = 'button';
-    pick.className = 'btn-primary';
-    pick.textContent = '选择聊天记录文件';
-
-    const file = document.createElement('input');
-    file.type = 'file';
-    file.accept = '.txt,.json,.csv,.html,.md,.log,text/plain';
-    file.hidden = true;
-
-    const demo = document.createElement('button');
-    demo.type = 'button';
-    demo.className = 'btn-ghost';
-    demo.textContent = '看一段示例';
-
-    row.append(pick, demo, file);
-    body.appendChild(row);
-
-    const info = document.createElement('p');
-    info.className = 'wx-info';
-    body.appendChild(info);
-
-    const paste = document.createElement('textarea');
-    paste.id = 'wx-paste';
-    paste.rows = 4;
-    paste.placeholder = '或者把聊天记录粘贴到这里…';
-    body.appendChild(paste);
-
-    const actions = document.createElement('div');
-    actions.className = 'tool-row';
-    const scan = document.createElement('button');
-    scan.type = 'button';
-    scan.className = 'btn-primary';
-    scan.textContent = '开始查找';
-    actions.appendChild(scan);
-    body.appendChild(actions);
-
-    const results = document.createElement('div');
-    body.appendChild(results);
-
-    function setRaw(text, name) {
-      state.raw = text;
-      state.name = name || '';
-      info.textContent = name
-        ? '已读入 ' + name + '（' + text.length + ' 字）'
-        : (text ? '已读入 ' + text.length + ' 字' : '');
-    }
-
-    pick.addEventListener('click', () => { file.value = ''; file.click(); });
-    file.addEventListener('change', () => {
-      const f = file.files && file.files[0];
-      if (!f) return;
-      const reader = new FileReader();
-      reader.onload = () => { setRaw(String(reader.result || ''), f.name); paste.value = ''; };
-      reader.readAsText(f);
-    });
-
-    demo.addEventListener('click', () => {
-      paste.value = WX_DEMO;
-      setRaw(WX_DEMO, '示例聊天记录');
-    });
-
-    paste.addEventListener('input', () => {
-      if (paste.value.trim()) setRaw(paste.value, '');
-    });
-
-    scan.addEventListener('click', async () => {
-      const raw = paste.value.trim() || state.raw;
-      if (!raw.trim()) {
-        info.textContent = '先选一个文件，或者把聊天记录粘贴进来。';
-        return;
-      }
-
-      scan.disabled = true;
-      scan.textContent = '查找中…';
-      results.innerHTML = '';
-
-      try {
-        const list = await scanChatForActivities(raw);
-        scan.disabled = false;
-        scan.textContent = '开始查找';
-
-        if (!list.length) {
-          const none = document.createElement('p');
-          none.className = 'tool-note';
-          none.textContent = '没找到能记的活动。可以换一段记录，或者在聊天里把时间说清楚一点。';
-          results.appendChild(none);
-          return;
-        }
-
-        renderWxCandidates(results, list);
-      } catch (err) {
-        scan.disabled = false;
-        scan.textContent = '开始查找';
-        const tip = document.createElement('p');
-        tip.className = 'tool-note';
-        tip.textContent = 'AI 没连上（' + err.message + '），可以再试一次，或者清掉 AI 设置用本机规则。';
-        results.appendChild(tip);
-      }
-    });
-  });
-}
-
-/** 找到的候选活动：逐条勾选 / 全部记入 */
-function renderWxCandidates(box, list) {
-  box.innerHTML = '';
-
-  const head = document.createElement('p');
-  head.className = 'tool-note';
-  head.textContent = '找到 ' + list.length + ' 条可能的安排，勾选要记入的：';
-  box.appendChild(head);
-
-  const ul = document.createElement('div');
-  ul.className = 'wx-list';
-
-  const checks = [];
-  list.forEach(a => {
-    const row = document.createElement('label');
-    row.className = 'wx-item';
-
-    const cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.checked = true;
-    cb.dataset.idx = String(checks.length);
-
-    const main = document.createElement('span');
-    main.className = 'wx-main';
-    const title = document.createElement('strong');
-    title.textContent = a.title;
-    const meta = document.createElement('span');
-    meta.className = 'wx-meta';
-    meta.textContent = formatDateCN(a.date) + ' ' +
-      (a.startTime ? a.startTime + (a.endTime ? '–' + a.endTime : '') : '全天') +
-      (a.tag ? ' · #' + a.tag : '');
-    main.append(title, meta);
-
-    row.append(cb, main);
-    ul.appendChild(row);
-    checks.push(cb);
-  });
-  box.appendChild(ul);
-
-  const actions = document.createElement('div');
-  actions.className = 'tool-row';
-
-  const saveAll = document.createElement('button');
-  saveAll.type = 'button';
-  saveAll.className = 'btn-primary';
-  saveAll.textContent = '全部记入';
-  saveAll.addEventListener('click', () => commitWx(list));
-
-  const saveChecked = document.createElement('button');
-  saveChecked.type = 'button';
-  saveChecked.className = 'btn-ghost';
-  saveChecked.textContent = '只记勾选的';
-  saveChecked.addEventListener('click', () => {
-    const picked = list.filter((_, i) => checks[i] && checks[i].checked);
-    if (!picked.length) {
-      showBanner('一条都没勾选');
-      return;
-    }
-    commitWx(picked);
-  });
-
-  const none = document.createElement('button');
-  none.type = 'button';
-  none.className = 'btn-ghost';
-  none.textContent = '都不记';
-  none.addEventListener('click', closeTool);
-
-  actions.append(saveAll, saveChecked, none);
-  box.appendChild(actions);
-}
-
-function commitWx(list) {
-  const saved = saveBatch(list, 'new');
-  const items = saved && Array.isArray(saved.items) ? saved.items : [];
-  const created = items.filter(x => x.kind === 'created').length;
-  const dup = items.filter(x => x.kind === 'duplicate').length;
-
-  renderAll();
-  closeTool();
-
-  showBanner('记入 ' + created + ' 条' + (dup ? '，另有 ' + dup + ' 条列表里已经有了' : ''));
-}
-function initWechat() {
-  const btn = document.getElementById('btn-wechat');
-  if (btn) btn.addEventListener('click', openWechat);
-}
-
 initTools();
 initAlert();
 initTheme();
 initSearch();
-initWechat();
 init();

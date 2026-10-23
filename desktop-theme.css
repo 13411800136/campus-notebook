@@ -1334,37 +1334,6 @@ html[data-theme="dark"] .status-btn.status-done {
   color: #cfe3c8;
 }
 
-/* ---------- ⑫ 手机端收尾 ---------- */
-
-@media (max-width: 640px) {
-  /* 3D 背景在手机上很吃电，直接换成纯色底 */
-  #desk-bg { display: none; }
-  #desk-bg .desk-bg-veil { display: none; }
-
-  body { background: #f0ede3; }
-  html[data-theme="dark"] body { background: #0b0d10; }
-
-  /* 顶栏按钮小一点，别把标题挤下去 */
-  .topbar { padding: 12px 14px; }
-  .topbar h1 { font-size: 14px; letter-spacing: 0.1em; }
-  .topbar .stats { font-size: 11.5px; }
-  .topbar-tools { gap: 8px; }
-  .topbar .link-btn { font-size: 12px; }
-
-  .panel { border-radius: 14px; padding: 14px; }
-  .wrap { padding: 0 12px; }
-
-  /* 聊天区别占满整屏 */
-  #chat-log { max-height: 40vh; }
-
-  .card { padding: 12px; }
-  .card-btns { gap: 6px; }
-  .search-input { font-size: 14px; }   /* 避免 iOS 聚焦时自动放大 */
-  .field input, .field textarea, #chat-text { font-size: 16px; }
-
-  .alert-dialog { padding: 20px 16px 14px; }
-  .tool-dialog { max-width: 100%; }
-}
 
 /* 深色下的小标题胶囊（原本是浅色底 + 深色字，会看不见） */
 html[data-theme="dark"] .panel > h2 {
@@ -1373,37 +1342,6 @@ html[data-theme="dark"] .panel > h2 {
   border-color: var(--hairline);
 }
 
-/* 手机端顶栏：标题 / 统计 / 工具 各占一行，别挤成三列 */
-@media (max-width: 640px) {
-  .topbar {
-    flex-wrap: wrap;
-    row-gap: 6px;
-    align-items: flex-start;
-  }
-
-  .topbar h1 {
-    order: 1;
-    flex: 1 1 auto;
-  }
-
-  .topbar .stats {
-    order: 3;
-    flex: 1 1 100%;
-    margin: 0;
-    font-size: 11.5px;
-    line-height: 1.5;
-  }
-
-  .topbar-tools {
-    order: 2;
-    flex: 0 0 auto;
-    gap: 8px;
-  }
-
-  .topbar-tools .link-btn {
-    padding: 2px 4px;
-  }
-}
 
 html[data-theme="dark"] .topbar .stats {
   color: rgba(236, 231, 220, 0.72);
@@ -1413,79 +1351,3 @@ html[data-theme="dark"] .topbar h1 {
   color: var(--ink);
 }
 
-/* ---------- ⑬ 微信聊天记录导入 ---------- */
-
-#wx-paste {
-  width: 100%;
-  margin: 10px 0;
-  padding: 9px 11px;
-  font: inherit;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--ink);
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid var(--hairline);
-  border-radius: 10px;
-  resize: vertical;
-}
-
-#wx-paste:focus {
-  outline: none;
-  border-color: rgba(111, 140, 107, 0.55);
-  box-shadow: 0 0 0 3px rgba(111, 140, 107, 0.14);
-}
-
-.wx-info {
-  margin: 8px 0 0;
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.wx-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 8px 0 14px;
-}
-
-.wx-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 9px;
-  padding: 8px 10px;
-  border-radius: 9px;
-  background: rgba(255, 255, 255, 0.66);
-  border: 1px solid rgba(64, 56, 42, 0.1);
-  cursor: pointer;
-}
-
-.wx-item:hover { background: rgba(255, 255, 255, 0.9); }
-
-.wx-item input { margin-top: 3px; }
-
-.wx-main {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.wx-main strong {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink);
-}
-
-.wx-meta {
-  font-size: 11.5px;
-  color: var(--muted);
-}
-
-html[data-theme="dark"] #wx-paste,
-html[data-theme="dark"] .wx-item {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: var(--hairline);
-  color: var(--ink);
-}
-
-html[data-theme="dark"] .wx-item:hover { background: rgba(255, 255, 255, 0.1); }
