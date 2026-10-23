@@ -1,4 +1,4 @@
-/* =========================================================
+﻿/* =========================================================
    活动小本本 · 交互背景皮肤（Rhine Lab 桌面）
    ---------------------------------------------------------
    只做两件事：
@@ -967,4 +967,81 @@ body {
 .overdue-hint:hover {
   background: linear-gradient(180deg, rgba(250, 232, 214, 1), rgba(247, 226, 205, 0.95));
   box-shadow: 0 2px 6px rgba(8, 9, 10, 0.10);
+}
+
+/* ---------- ⑩ 到点弹窗 ---------- */
+
+.alert-overlay {
+  z-index: 60;
+  background: rgba(31, 35, 40, 0.52);
+  backdrop-filter: blur(2px);
+}
+
+.alert-dialog {
+  max-width: 400px;
+  padding: 24px 24px 18px;
+  text-align: center;
+  border: 1px solid rgba(64, 56, 42, 0.16);
+  background: linear-gradient(180deg, #fffdf7, #faf5ea);
+  box-shadow: 0 24px 70px rgba(20, 18, 12, 0.35), 0 2px 6px rgba(20, 18, 12, 0.12);
+  animation: alert-pop 0.28s cubic-bezier(0.2, 0.9, 0.25, 1.05);
+}
+
+.alert-icon {
+  font-size: 34px;
+  line-height: 1;
+  margin-bottom: 6px;
+  animation: alert-bell 1.8s ease-in-out infinite;
+}
+
+.alert-dialog h3 {
+  margin: 0 0 8px;
+  font-size: 19px;
+  letter-spacing: 0.01em;
+}
+
+.alert-lead {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.alert-event {
+  margin: 0 0 18px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.65;
+  color: var(--ink);
+  white-space: pre-line;
+}
+
+.alert-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.alert-actions button {
+  padding: 9px 12px;
+  font-size: 13px;
+}
+
+/* 「知道了」占满底部一行，一眼就知道点哪儿 */
+#alert-ok {
+  grid-column: 1 / -1;
+}
+
+@keyframes alert-pop {
+  from { opacity: 0; transform: translateY(12px) scale(0.96); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes alert-bell {
+  0%, 100% { transform: rotate(-7deg); }
+  50%      { transform: rotate(7deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .alert-dialog,
+  .alert-icon { animation: none; }
 }

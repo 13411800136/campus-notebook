@@ -1,4 +1,4 @@
-/* =========================================================
+﻿/* =========================================================
    活动小本本 · 逻辑
    代码分六段，从上往下读：
      ① 常量        ② 日期工具      ③ 数据读写
@@ -3532,9 +3532,108 @@ function showReminder(ev) {
   const text = `${lead}${when} · ${ev.title}`;
 
   showBanner(text);
+  showAlert(ev, lead);        // 到点弹窗：直接跳出来，需要点一下才关
   systemNotify(lead ? '活动提醒' : '活动开始了', text);
   flashTitle(when);      // 页面在后台也能看到标签页标题在闪
   beep();                // 很轻的一声，不需要任何权限
+}
+
+/* --- 到点弹窗 --- */
+
+const alertQueue = [];
+let alertBusy = false;
+let currentAlert = null;
+const alertSnoozeTimers = new Map();
+
+function showAlert(ev, lead) {
+  alertQueue.push({ ev: ev, lead: lead || '' });
+  pumpAlerts();
+}
+
+function pumpAlerts() {
+  if (alertBusy) return;
+  const next = alertQueue.shift();
+  if (!next) return;
+
+  alertBusy = true;
+  currentAlert = next;
+  const ev = next.ev;
+
+  const title = document.getElementById('alert-title');
+  const leadBox = document.getElementById('alert-lead');
+  const eventBox = document.getElementById('alert-event');
+
+  const start = new Date(ev.date + 'T' + (ev.startTime || '00:00') + ':00');
+  const mins = isNaN(start.getTime()) ? null : Math.round((start.getTime() - Date.now()) / 60000);
+
+  if (mins !== null && mins > 0) {
+    title.textContent = '再过 ' + mins + ' 分钟开始';
+    leadBox.textContent = '这是提前提醒，别忘了准备。';
+  } else {
+    title.textContent = '活动时间到了';
+    leadBox.textContent = '';
+  }
+
+  const when = ev.endTime ? `${ev.startTime}–${ev.endTime}` : (ev.startTime || '全天');
+  eventBox.textContent = ev.title + '\n' + formatDateCN(ev.date) + ' ' + when;
+
+  const overlay = document.getElementById('alert-overlay');
+  overlay.hidden = false;
+  document.getElementById('alert-ok').focus();
+}
+
+function closeAlert() {
+  const overlay = document.getElementById('alert-overlay');
+  if (!overlay || overlay.hidden) return;
+  overlay.hidden = true;
+  alertBusy = false;
+  currentAlert = null;
+  pumpAlerts();          // 同时到点的还有别的活动，接着弹
+}
+
+function snoozeAlert(item) {
+  if (!item) return closeAlert();
+  const key = reminderKey(item.ev);
+  if (alertSnoozeTimers.has(key)) clearTimeout(alertSnoozeTimers.get(key));
+  alertSnoozeTimers.set(key, setTimeout(() => {
+    alertSnoozeTimers.delete(key);
+    showAlert(item.ev, item.lead);
+  }, 5 * 60000));
+
+  closeAlert();
+  showBanner('好，5 分钟后再提醒你：' + item.ev.title);
+}
+
+function completeAlert(item) {
+  if (!item) return closeAlert();
+  const ev = events.find(e => e.id === item.ev.id);
+  if (ev && statusOf(ev) !== 'done') {
+    ev.status = 'done';
+    saveEvents();
+    renderAll();
+    showBanner('已完成：' + ev.title);
+  }
+  closeAlert();
+}
+
+function initAlert() {
+  const ok = document.getElementById('alert-ok');
+  const snooze = document.getElementById('alert-snooze');
+  const done = document.getElementById('alert-done');
+  if (!ok || !snooze || !done) return;
+
+  ok.addEventListener('click', closeAlert);
+  snooze.addEventListener('click', () => snoozeAlert(currentAlert));
+  done.addEventListener('click', () => completeAlert(currentAlert));
+
+  document.addEventListener('keydown', ev => {
+    const overlay = document.getElementById('alert-overlay');
+    if (!overlay || overlay.hidden) return;
+    if (ev.key === 'Escape' || ev.key === 'Enter') {
+      ev.preventDefault();
+      closeAlert();
+    }
+  });
 }
 
 /* --- 兜底一：标题闪烁（不需要权限） --- */
@@ -4282,4 +4381,5 @@ function initTools() {
 }
 
 initTools();
+initAlert();
 init();

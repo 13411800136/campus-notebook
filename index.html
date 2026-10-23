@@ -44,6 +44,21 @@
   </div>
 </div>
 
+<!-- ===== 到点弹窗：时间到了直接跳出来 ===== -->
+<div class="overlay alert-overlay" id="alert-overlay" hidden>
+  <div class="dialog alert-dialog" role="alertdialog" aria-modal="true" aria-labelledby="alert-title">
+    <div class="alert-icon" aria-hidden="true">⏰</div>
+    <h3 id="alert-title">活动时间到了</h3>
+    <p class="alert-lead" id="alert-lead"></p>
+    <p class="alert-event" id="alert-event"></p>
+    <div class="dialog-actions alert-actions">
+      <button type="button" class="btn-ghost" id="alert-snooze">5 分钟后再提醒</button>
+      <button type="button" class="btn-ghost" id="alert-done">标记完成</button>
+      <button type="button" class="btn-primary" id="alert-ok">知道了</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== 到点提醒条（默认隐藏） ===== -->
 <div class="reminder-bar" id="reminder-bar" hidden>
   <span class="reminder-icon">⏰</span>
