@@ -1,7 +1,8 @@
 @echo off
 chcp 936 >nul
 title 活动小本本 - 本地服务（关掉这个窗口就停止）
-cd /d "%~dp0"
+set "DIR=%~dp0"
+cd /d "%DIR%"
 set "PORT=8899"
 set "PY="
 
@@ -22,14 +23,24 @@ if not defined PY (
   exit /b 1
 )
 
+if not exist "%DIR%index.html" (
+  echo  [x] 这个文件夹里没有 index.html，是不是把 bat 挪走啦？
+  pause
+  exit /b 1
+)
+
+rem 8899 被占用就换 8900
+powershell -NoProfile -Command "exit (Get-NetTCPConnection -State Listen -LocalPort %PORT% -ErrorAction SilentlyContinue | Measure-Object).Count"
+if errorlevel 1 set "PORT=8900"
+
 echo.
 echo  正在把这个文件夹变成网页服务：
-echo    %CD%
+echo    %DIR%
 echo  浏览器地址：http://localhost:%PORT%/
 echo.
 echo  这个黑窗口别关，关了服务就停；用完直接关掉它。
 echo.
 
 start "" powershell -NoProfile -WindowStyle Hidden -Command "Start-Sleep -Seconds 2; Start-Process 'http://localhost:%PORT%/'"
-"%PY%" -m http.server %PORT%
+"%PY%" -m http.server %PORT% --directory "%DIR%"
 pause
